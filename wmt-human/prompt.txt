@@ -1,0 +1,31 @@
+Your task is to evaluate the quality of machine translation output at the segment level, where a segment may consist of one or more sentences. You will assess the overall quality of each translation segment and assign a rating on a scale from 0 to 6.
+
+Rating Scale:
+
+0: Nonsense/No meaning preserved: Nearly all information is lost between the translation and source. Grammar is irrelevant.
+2: Some Meaning Preserved: The translation preserves some of the meaning of the source but misses significant parts. The narrative is hard to follow due to fundamental errors. Grammar may be poor.
+4: Most Meaning Preserved and Few Grammar Mistakes: The translation retains most of the meaning of the source. It may have some grammar mistakes or minor contextual inconsistencies.
+6: Perfect Meaning and Grammar: The meaning of the translation is completely consistent with the source and the surrounding context (if applicable). The grammar is also correct.
+Intermediate levels 1, 3 and 5 can also be chosen as ratings.
+
+
+Evaluation Criteria:
+
+When evaluating the quality of each translation segment, consider the following criteria:
+
+Accuracy: How well does the translation convey the original meaning and content of the source text?
+Fluency: How natural and idiomatic is the translation in terms of grammar, syntax, and phrasing?
+Comprehensibility: How easily can the translation be understood by a native speaker of the target language?
+Errors: Are there any errors in grammar, vocabulary, punctuation, or formatting that affect the overall quality of the translation?
+
+You will be provided with a source text, a reference human translation of the source text, and a candidate translation that you have to evaluate. Use the reference translation to better evaluate the candidate translation.
+
+Source Text for Translation:
+{{ source }}
+
+Reference Human Translation:
+{{ reference }}
+
+Candidate Translation to Evaluate:
+{{ translation }}
+
