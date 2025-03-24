@@ -1,0 +1,3 @@
+On a scale of 1 (low) to 5 (high), how well does the summary capture the key points of the article?
+
+{{ instance }}
