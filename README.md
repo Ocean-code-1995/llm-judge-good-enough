@@ -1,0 +1,6 @@
+# ***`When is an LLM-as-a-judge good enough?`***
+---
+---
+# ***`Abstract`***
+
+*Generative AI models allow us to generate human-like content, such as large language models (LLMs) generate texts. However, such created contend can only be used to automate processes if certain requirements regarding trustworthiness and correctness are fulfilled. In order to relieve people from controlling the created content, a concept known as LLM-as-a-judge is available. In this scenario, another instance of an LLM is prompted to act as a judge, and check a created text for certain quality requirements. However, such a judgement might not always align with a human judgement, which requires benchmarking the LLM-judge as well. Since a full alignment might not be achieved, the question is answered in this work, when an LLM-as-a-judge is good enough to judge a specific task fulfillment to break evaluating evaluations. For this purpose, it is made use of the fact that for evaluating generative content, judgements from different human evaluators can also differ as there might be no universal or unequivocally assessment of the quality, called a diversity of opinion. As long as the deviations of the LLM-judge from human estimations remain within the human diversity of opinion, it is suggested to call an LLM-judge as good enough.*
