@@ -185,7 +185,7 @@ class LLMGoodEnough:
         }
 
         # 3) Plot
-        fig, axes = plt.subplots(1, 2, figsize=(16, 10))
+        fig, axes = plt.subplots(1, 2, figsize=(16, 7))
         fig.suptitle(f"LLM-as-a-judge good enough?", fontsize=20, fontweight='bold')
         axes = axes.flatten()
 
