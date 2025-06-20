@@ -1,7 +1,11 @@
 import pandas as pd
 import numpy as np
+import random
 from itertools import combinations
 from scipy.stats import mannwhitneyu
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_theme(style="whitegrid")
 
 
 class LLMGoodEnough:
@@ -101,7 +105,7 @@ class LLMGoodEnough:
 
 
     @staticmethod
-    def mannwhitney_test(
+    def run_mannwhitneyu_test(
         llm_human_disagreements: np.ndarray,
         human_human_disagreements: np.ndarray
         ) -> float:
@@ -128,7 +132,108 @@ class LLMGoodEnough:
             alternative='greater'
         ).pvalue
 
-    def visulize_good_enough(self):
+
+    def init_random_judge(self, min_score: int, max_score: int) -> np.ndarray:
         """
+        Initialize a random judge as a comparison to the LLM-human judgements. The random judge
+        is initialized with a random integer between the minimum and maximum value.
+
+        Parameters
+        ----------
+        min_score : int
+            Minimum value for the random judge.
+        max_score : int
+            Maximum value for the random judge.
+
+        Returns
+        -------
+        np.ndarray
+            Array of random integers between the minimum and maximum value.
         """
-        pass
+        return np.random.randint(min_score, max_score + 1, size=len(self.df))
+
+
+    def visulize_good_enough(self, llm_col: str, min_score: int, max_score: int) -> plt.figure:
+        """
+        Visualize the LLM-as-a-judge performance compared to human judges and a random baseline.
+
+        Parameters
+        ----------
+        llm_col : str
+            Column name for the LLM judge's ratings.
+        min_score : int, optional
+            Minimum possible score in the rating scale. If None, will be inferred from data.
+        max_score : int, optional
+            Maximum possible score in the rating scale. If None, will be inferred from data.
+        """
+        # 1) Compute disagreement distributions
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # 1.1) human-human
+        human_human_disagreements = self.compute_human_disagreements()
+
+        # 1.2) llm-human
+        llm_human_disagreements = self.compute_llm_human_disagreements(llm_col)
+
+        # random judge
+        random_judge = self.init_random_judge(min_score=min_score, max_score=max_score)
+        self.df['RANDOM_as_a_judge'] = random_judge
+        random_judge_disagreements = self.compute_llm_human_disagreements('RANDOM_as_a_judge')
+
+        model_vs_human_distributions = {
+            'llm-human': llm_human_disagreements,
+            'random-human': random_judge_disagreements
+        }
+
+        # 3) Plot
+        fig, axes = plt.subplots(1, 2, figsize=(16, 10))
+        fig.suptitle(f"LLM-as-a-judge good enough?", fontsize=20, fontweight='bold')
+        axes = axes.flatten()
+
+        # Dynamic bins based on score range
+        max_possible_disagreement = max_score - min_score
+        bins = np.arange(0, max_possible_disagreement + 2)  # +2 to include the max disagreement value
+        bar_width = 0.35
+        categories = np.arange(len(bins) - 1)
+
+        for ax, (name, data) in zip(axes, model_vs_human_distributions.items()):
+            human_human_mean, human_human_std = round(np.mean(human_human_disagreements), 2), round(np.std(human_human_disagreements), 2)
+            llm_human_mean, llm_human_std = round(np.mean(data), 2), round(np.std(data), 2)
+
+            # Calculate p-value for this comparison
+            p_val = self.run_mannwhitneyu_test(data, human_human_disagreements)
+
+            # Plot human-human
+            ax.hist(
+                human_human_disagreements, bins=bins, density=True, alpha=0.6, color='royalblue',
+                label=f"Humans' diversity of opinion\nMean = {human_human_mean}, Std = {human_human_std}",
+                width=bar_width, edgecolor='black', hatch="///"
+            )
+
+            # Plot llm-human
+            ax.hist(
+                data, bins=bins - 0.35, density=True, alpha=0.5, color='red',
+                label=f'Human-Model deviation\nMean = {llm_human_mean}, Std = {llm_human_std}',
+                width=bar_width, edgecolor='black', hatch=""
+            )
+
+            # Add p-value to legend
+            handles, labels = ax.get_legend_handles_labels()
+            handles.append(plt.Line2D([], [], color='none'))
+
+            legend = ax.legend(
+                handles=handles, labels=labels, loc='upper center', title=f"p-value = {p_val:.4f}",
+                edgecolor='black', facecolor='white', framealpha=1,
+                fontsize=13.5
+                )
+            legend.get_title().set_fontweight('bold')
+            legend.get_title().set_fontsize(13.5)
+
+            ax.set_title(name, fontweight='bold', fontsize=20)
+            ax.set_xlabel('Degree of Disagreement', fontsize=13.5)
+            ax.set_ylabel('Probability', fontsize=13.5)
+            ax.set_xticks(categories)
+            ax.set_xlim(min(categories) - bar_width - 0.1, max(categories) + bar_width + 0.1)
+            ax.set_ylim(0, 0.6)
+
+        plt.tight_layout()
+        plt.show();
