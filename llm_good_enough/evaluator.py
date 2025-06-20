@@ -8,10 +8,15 @@ class LLMGoodEnough:
     """
     Is your selected LLM-as-a-judge good enough?
 
-    This class evaluates whether an LLM's performance is "good enough" by comparing
-    LLM-human disagreements to human-human disagreements using statistical testing.
+    This class evaluates whether an LLM's performance is "good enough" and hence suitbale for automated evaluation tasks of other LLM generated outputs. It achieves this by comparing LLM-human disagreements to human-human disagreements using statistical testing.
 
     Corresponding paper: https://arxiv.org/abs/--->>>ToBeAnnounced<<<---
+
+    Example:
+    ```python
+    from llm_good_enough import LLMGoodEnough
+    LLM_Evaluator = LLMGoodEnough(df=df, human_cols=human_cols)
+    ```
     """
 
     def __init__(self, df: pd.DataFrame, human_cols: list[str]) -> None:
