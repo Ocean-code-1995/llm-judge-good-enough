@@ -3,17 +3,20 @@ import numpy as np
 from itertools import combinations
 from scipy.stats import mannwhitneyu
 
+
 class LLMGoodEnough:
     """
-    Evaluator for LLM performance.
+    Is your selected LLM-as-a-judge good enough?
+
+    This class evaluates whether an LLM's performance is "good enough" by comparing
+    LLM-human disagreements to human-human disagreements using statistical testing.
+
+    Corresponding paper: https://arxiv.org/abs/--->>>ToBeAnnounced<<<---
     """
 
     def __init__(self, df: pd.DataFrame, human_cols: list[str]) -> None:
         """
-        Initialize the LLM Good Enough evaluator.
-
-        This class evaluates whether an LLM's performance is "good enough" by comparing
-        LLM-human disagreements to human-human disagreements using statistical testing.
+        Initialize the LLM Good Enough evaluator instance.
 
         Parameters
         ----------
