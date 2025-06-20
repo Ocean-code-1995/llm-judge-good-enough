@@ -4,33 +4,55 @@ from itertools import combinations
 from scipy.stats import mannwhitneyu
 
 class LLMGoodEnough:
-    def __init__(self, df: pd.DataFrame) -> None:
-        """
-        """
-        self.df = df
+    """
+    Evaluator for LLM performance.
+    """
 
-    def compute_human_disagreements(self, human_cols: list[str]) -> np.ndarray:
+    def __init__(self, df: pd.DataFrame, human_cols: list[str]) -> None:
         """
-        Vectorized computation of all pairwise absolute differences between human raters per case.
+        Initialize the LLM Good Enough evaluator.
+
+        This class evaluates whether an LLM's performance is "good enough" by comparing
+        LLM-human disagreements to human-human disagreements using statistical testing.
 
         Parameters
         ----------
+        df : pd.DataFrame
+            DataFrame containing human and LLM ratings. Each column should represent
+            ratings from a different judge (human or LLM).
         human_cols : list of str
-            Column names for human raters.
+            Column names for human raters. These are the "ground truth" judges that
+            LLM performance will be compared against.
+        """
+        self.df = df
+        self.human_cols = human_cols
+
+        # Validate human columns exist
+        missing_cols = [col for col in human_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(
+                f"❌ Human columns not found in DataFrame: {missing_cols}"
+            )
+
+        if len(human_cols) < 2:
+            raise ValueError("❌ At least two human columns are required.")
+
+        # Check for NaN values in human columns
+        if df[human_cols].isna().any().any():
+            raise ValueError("❌ Data contains NaN values in human columns.")
+
+    def compute_human_disagreements(self) -> np.ndarray:
+        """
+        Vectorized computation of all pairwise absolute differences between human raters per case.
 
         Returns
         -------
         np.ndarray
             Flattened array of all pairwise absolute disagreements.
         """
-        if len(human_cols) < 2:
-            raise ValueError("❌ At least two human columns are required.")
 
         # Select only human columns and convert to numpy
-        data = self.df[human_cols].to_numpy()
-
-        if np.isnan(data).any():
-            raise ValueError("❌ Data contains NaN values.")
+        data = self.df[self.human_cols].to_numpy()
 
         # Compute pairwise differences per row for all combinations
         comb_indices = list(combinations(range(data.shape[1]), 2))
@@ -39,14 +61,12 @@ class LLMGoodEnough:
         return diffs.flatten()
 
 
-    def compute_llm_human_disagreements(self, human_cols: list[str], llm_col: str) -> np.ndarray:
+    def compute_llm_human_disagreements(self, llm_col: str) -> np.ndarray:
         """
         Vectorized computation of absolute differences between LLM and each human judge per case.
 
         Parameters
         ----------
-        human_cols : list of str
-            Column names for human judges.
         llm_col : str
             Column name for the LLM judge's ratings.
 
@@ -55,20 +75,16 @@ class LLMGoodEnough:
         np.ndarray
             Array of absolute differences (LLM vs. each human) across all cases.
         """
-        if len(human_cols) < 2:
-            raise ValueError("❌ At least two human columns are required.")
+        if llm_col not in self.df.columns:
+            raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
 
-        # if nan in df raise error
-        if self.df.isna().any().any():
-            raise ValueError("❌ Data contains NaN values.")
-
-        # Drop rows with any missing values in required columns
-        required_cols = human_cols + [llm_col]
-        filtered_df = self.df.dropna(subset=required_cols)
+        # Check for NaN values in llm column
+        if self.df[llm_col].isna().any().any():
+            raise ValueError("❌ Data contains NaN values in required columns.")
 
         # Convert to NumPy arrays
-        human_ratings = filtered_df[human_cols].to_numpy()
-        llm_ratings = filtered_df[llm_col].to_numpy().reshape(-1, 1)  # column vector for broadcasting
+        human_ratings = self.df[self.human_cols].to_numpy()
+        llm_ratings = self.df[llm_col].to_numpy().reshape(-1, 1)  # column vector for broadcasting
 
         # Compute absolute differences: each human col vs. LLM
         differences = np.abs(human_ratings - llm_ratings)
@@ -88,10 +104,20 @@ class LLMGoodEnough:
         ----------
         llm_human_disagreements : np.ndarray
             Array of absolute differences between LLM and each human judge.
+        human_human_disagreements : np.ndarray
+            Array of absolute differences between human judges.
+
+        Returns
+        -------
+        float
+            P-value from Mann-Whitney U test. Lower values indicate LLM disagreements
+            are significantly greater than human disagreements.
         """
         # compute mann-whitney u test and round to 4 decimal places
         return mannwhitneyu(
-            llm_human_disagreements, human_human_disagreements, alternative='greater'
+            x=llm_human_disagreements,
+            y=human_human_disagreements,
+            alternative='greater'
         ).pvalue
 
     def visulize_good_enough(self):
