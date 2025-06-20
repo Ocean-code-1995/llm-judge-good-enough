@@ -153,7 +153,7 @@ class LLMGoodEnough:
         return np.random.randint(min_score, max_score + 1, size=len(self.df))
 
 
-    def visulize_good_enough(self, llm_col: str, min_score: int, max_score: int) -> plt.figure:
+    def visulize_good_enough(self, llm_col: str, min_score: int, max_score: int, y_lim, save_path: str = None) -> None:
         """
         Visualize the LLM-as-a-judge performance compared to human judges and a random baseline.
 
@@ -165,6 +165,10 @@ class LLMGoodEnough:
             Minimum possible score in the rating scale. If None, will be inferred from data.
         max_score : int, optional
             Maximum possible score in the rating scale. If None, will be inferred from data.
+        y_lim : float
+            Upper limit of the y-axis.
+        save_path : str, optional
+            Path to save the figure. If None, the figure will not be saved.
         """
         # 1) Compute disagreement distributions
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -186,7 +190,7 @@ class LLMGoodEnough:
 
         # 3) Plot
         fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-        fig.suptitle(f"LLM-as-a-judge good enough?", fontsize=20, fontweight='bold')
+        fig.suptitle(f"LLM-as-a-judge good enough?", fontsize=22, fontweight='bold')
         axes = axes.flatten()
 
         # Dynamic bins based on score range
@@ -223,17 +227,23 @@ class LLMGoodEnough:
             legend = ax.legend(
                 handles=handles, labels=labels, loc='upper center', title=f"p-value = {p_val:.4f}",
                 edgecolor='black', facecolor='white', framealpha=1,
-                fontsize=13.5
+                fontsize=14.5
                 )
             legend.get_title().set_fontweight('bold')
             legend.get_title().set_fontsize(13.5)
 
             ax.set_title(name, fontweight='bold', fontsize=20)
-            ax.set_xlabel('Degree of Disagreement', fontsize=13.5)
-            ax.set_ylabel('Probability', fontsize=13.5)
+            ax.set_xlabel('Degree of Disagreement', fontsize=17)
+            ax.set_ylabel('Probability', fontsize=17)
             ax.set_xticks(categories)
+            ax.set_yticks(np.arange(0, 0.6, 0.1))
+            ax.tick_params(axis='both', which='major', labelsize=13)
             ax.set_xlim(min(categories) - bar_width - 0.1, max(categories) + bar_width + 0.1)
-            ax.set_ylim(0, 0.6)
+            ax.set_ylim(0, y_lim)
 
         plt.tight_layout()
         plt.show();
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to {save_path}")
