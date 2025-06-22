@@ -209,14 +209,14 @@ class LLMGoodEnough:
             # Plot human-human
             ax.hist(
                 human_human_disagreements, bins=bins, density=True, alpha=0.6, color='royalblue',
-                label=f"Humans' diversity of opinion\nMean = {human_human_mean}, Std = {human_human_std}",
+                label=f"Humans' diversity of opinion\nμ = {human_human_mean}, σ = {human_human_std}",
                 width=bar_width, edgecolor='black', hatch="///"
             )
 
             # Plot llm-human
             ax.hist(
                 data, bins=bins - 0.35, density=True, alpha=0.5, color='red',
-                label=f'Human-Model deviation\nMean = {llm_human_mean}, Std = {llm_human_std}',
+                label=f'Human-Model deviation\nμ = {llm_human_mean}, σ = {llm_human_std}',
                 width=bar_width, edgecolor='black', hatch=""
             )
 
