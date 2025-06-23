@@ -38,7 +38,11 @@ LLM-AS-A-JUDGE-GOOD-ENOUGH
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/Ocean-code-1995/LLM-as-a-Judge-good-enough.git
+git clone https://github.com/Ocean-code-1995/LLM_as_a_Judge_good_enough.git
+```
+
+```bash
+cd path/to/.../LLM_as_a_Judge_good_enough
 ```
 
 ### 2. Install dependencies
@@ -50,7 +54,7 @@ conda create --name llm-good-enough python=3.11.9
 
 ##### Activate virtual environment:
 ```bash
-conda acvtivate llm-good-enough
+conda activate llm-good-enough
 ```
 ##### Install dependencies:
 ```bash
@@ -58,6 +62,10 @@ pip install -r requirements.txt
 ```
 
 ### 3. Usage Example
+
+```bash
+touch notebook_name.ipynb
+```
 
 ```python
 import pandas as pd
