@@ -42,7 +42,9 @@ class LLMGoodEnough:
         """
         self.df = df
         self.human_cols = human_cols
-        self.df['RANDOM_as_a_judge'] = self.init_random_judge(min_score=min_score, max_score=max_score)
+        self.min_score = min_score
+        self.max_score = max_score
+        self.df['RANDOM_as_a_judge'] = self.init_random_judge(min_score=self.min_score, max_score=self.max_score)
 
         # Validate human columns exist
         missing_cols = [col for col in human_cols if col not in df.columns]
@@ -163,7 +165,7 @@ class LLMGoodEnough:
         return np.random.randint(min_score, max_score + 1, size=len(self.df))
 
 
-    def visulize_good_enough(self, llm_col: str, min_score: int, max_score: int, y_lim, save_path: str = None) -> None:
+    def visulize_good_enough(self, llm_col: str, y_lim: float, save_path: str = None) -> None:
         """
         Visualize the LLM-as-a-judge performance compared to human judges and a random baseline.
 
@@ -189,7 +191,7 @@ class LLMGoodEnough:
         llm_human_disagreements = self.compute_llm_human_disagreements(llm_col)
 
         # random judge
-        random_judge = self.init_random_judge(min_score=min_score, max_score=max_score)
+        random_judge = self.init_random_judge(min_score=self.min_score, max_score=self.max_score)
         self.df['RANDOM_as_a_judge'] = random_judge
         random_judge_disagreements = self.compute_llm_human_disagreements('RANDOM_as_a_judge')
 
@@ -204,7 +206,7 @@ class LLMGoodEnough:
         axes = axes.flatten()
 
         # Dynamic bins based on score range
-        max_possible_disagreement = max_score - min_score
+        max_possible_disagreement = self.max_score - self.min_score
         bins = np.arange(0, max_possible_disagreement + 2)  # +2 to include the max disagreement value
         bar_width = 0.35
         categories = np.arange(len(bins) - 1)
