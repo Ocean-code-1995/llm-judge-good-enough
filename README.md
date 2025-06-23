@@ -20,6 +20,9 @@ git clone https://github.com/Ocean-code-1995/LLM-as-a-Judge-good-enough.git
 
 ```bash
 conda create --name llm-good-enough python=3.11.9
+
+conda acvtivate llm-good-enough
+
 pip install -r requirements.txt
 ```
 
