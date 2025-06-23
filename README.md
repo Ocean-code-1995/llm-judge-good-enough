@@ -18,11 +18,17 @@ git clone https://github.com/Ocean-code-1995/LLM-as-a-Judge-good-enough.git
 
 ### 2. Install dependencies
 
+##### Create conda envirnoment:
 ```bash
 conda create --name llm-good-enough python=3.11.9
+```
 
+##### Activate virtual environment:
+```bash
 conda acvtivate llm-good-enough
-
+```
+##### Install dependencies:
+```bash
 pip install -r requirements.txt
 ```
 
