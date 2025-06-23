@@ -31,16 +31,18 @@ from llm_good_enough import LLMGoodEnough
 
 # Load your DataFrame (replace with your own data)
 df = pd.read_csv('your_data.csv')
-llm_as_a_judge_col = "GPT_as_a_judge"
-human_cols = ['human_#1', 'human_#2', 'human_#3']  # replace with your human judge columns
-min_score, max_score = 1, 5  # adjust to your rating scale
 
 # Initialize evaluator
-LLM_Evaluator = LLMGoodEnough(df=df, human_cols=human_cols, min_score=min_score, max_score=max_score)
+LLM_Evaluator = LLMGoodEnough(
+    df=df,
+    human_cols=['human_#1', 'human_#2', 'human_#3']  # replace with your human judge columns
+    min_score=0,
+    max_score=6
+)
 
 # visualize LLM-as-a-judge good enough
 LLM_Evaluator.visulize_good_enough(
-    llm_col=llm_as_a_judge_col,        # LLM-as-a-judge column name
+    llm_col="GPT_as_a_judge",          # LLM-as-a-judge column name
     y_lim=0.6,                         # y-axis limit -> probability (0-1)
 )
 ```
