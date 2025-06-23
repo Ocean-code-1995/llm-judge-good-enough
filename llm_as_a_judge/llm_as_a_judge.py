@@ -28,7 +28,7 @@ class LLMAsAJudge:
             self.provider = "openai"
             openai.api_key = api_key
         else:
-            raise ValueError("Unsupported model/provider.")
+            raise ValueError(f"❌ Unsupported model: {model}.")
 
     def read_prompt(self, prompt_file_path: str) -> str:
         """Read the prompt from a file.
@@ -49,7 +49,7 @@ class LLMAsAJudge:
             elif dataset_name == "wmt-machine":
                 prompt = prompt.replace("{{ instance }}", row["instance"])
             else:
-                raise ValueError("Unsupported dataset.")
+                raise ValueError(f"❌ Unsupported dataset: {dataset_name}.")
 
             messages = [
                 {"role": "system", "content": self.system_prompt},
@@ -69,5 +69,8 @@ class LLMAsAJudge:
                     messages=messages
                 )
                 df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+
+            else:
+                raise ValueError(f"❌ Unsupported provider: {self.provider}.")
 
         return df
