@@ -11,14 +11,19 @@
 
 ## Getting Started
 
-### 1. Install dependencies
+### 1. Clone Repository
+```bash
+git clone https://github.com/Ocean-code-1995/LLM-as-a-Judge-good-enough.git
+```
+
+### 2. Install dependencies
 
 ```bash
 conda create --name llm-good-enough python=3.11.9
 pip install -r requirements.txt
 ```
 
-### 2. Usage Example
+### 3. Usage Example
 
 ```python
 import pandas as pd
