@@ -69,3 +69,5 @@ class LLMAsAJudge:
                     messages=messages
                 )
                 df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+
+        return df
