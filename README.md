@@ -7,6 +7,8 @@
 
 ---
 
+> ***`Paper accessible at the following link:`*** xxxxxxxx.xx
+
 ## Getting Started
 
 ### 1. Install dependencies
