@@ -3,3 +3,5 @@ numpy
 matplotlib
 seaborn
 scipy
+openai
+mistralai
