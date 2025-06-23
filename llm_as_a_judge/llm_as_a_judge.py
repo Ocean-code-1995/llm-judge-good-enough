@@ -1,6 +1,10 @@
 from mistralai import Mistral
 import openai
 import pandas as pd
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class LLMAsAJudge:
@@ -28,7 +32,7 @@ class LLMAsAJudge:
             self.provider = "openai"
             openai.api_key = api_key
         else:
-            raise ValueError(f"❌ Unsupported model: {model}.")
+            logger.error(f"❌ Unsupported model: {model}.")
 
     def read_prompt(self, prompt_file_path: str) -> str:
         """Read the prompt from a file.
@@ -49,28 +53,30 @@ class LLMAsAJudge:
             elif dataset_name == "wmt-machine":
                 prompt = prompt.replace("{{ instance }}", row["instance"])
             else:
-                raise ValueError(f"❌ Unsupported dataset: {dataset_name}.")
+                logger.error(f"❌ Unsupported dataset: {dataset_name}.")
+                break
 
             messages = [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": self.prompt}
             ]
-
-            if self.provider == "mistral":
-                completion = self.client.chat.complete(
-                    model=self.model,
+            try:
+                if self.provider == "mistral":
+                    completion = self.client.chat.complete(
+                        model=self.model,
                     messages=messages
-                )
-                df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+                    )
+                    df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
 
-            elif self.provider == "openai":
-                completion = openai.chat.completions.create(
+                elif self.provider == "openai":
+                    completion = openai.chat.completions.create(
                     model=self.model,
-                    messages=messages
-                )
-                df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+                            messages=messages
+                    )
+                    df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
 
-            else:
-                raise ValueError(f"❌ Unsupported provider: {self.provider}.")
+            except Exception as e:
+                logger.error(f"❌ Index {idx}; Error:\n{e}")
+                df.at[idx, f"{self.model}_as_a_judge"] = "❌ Evaluation Error"
 
         return df
