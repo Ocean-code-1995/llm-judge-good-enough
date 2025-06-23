@@ -23,7 +23,7 @@ class LLMGoodEnough:
     ```
     """
 
-    def __init__(self, df: pd.DataFrame, human_cols: list[str]) -> None:
+    def __init__(self, df: pd.DataFrame, human_cols: list[str], min_score: int, max_score: int) -> None:
         """
         Initialize the LLM Good Enough evaluator instance.
 
@@ -35,9 +35,14 @@ class LLMGoodEnough:
         human_cols : list of str
             Column names for human raters. These are the "ground truth" judges that
             LLM performance will be compared against.
+        min_score : int
+            Minimum score for the random judge.
+        max_score : int
+            Maximum score for the random judge.
         """
         self.df = df
         self.human_cols = human_cols
+        self.df['RANDOM_as_a_judge'] = self.init_random_judge(min_score=min_score, max_score=max_score)
 
         # Validate human columns exist
         missing_cols = [col for col in human_cols if col not in df.columns]
@@ -92,7 +97,11 @@ class LLMGoodEnough:
 
         # Check for NaN values in llm column
         if self.df[llm_col].isna().any().any():
-            raise ValueError("❌ Data contains NaN values in required columns.")
+            print(f"❌ Data contains NaN values in {llm_col} column.")
+            # drop rows with nan in llm_col
+            print(f"✅Dropping {self.df[self.df[llm_col].isna()].shape[0]} rows with nan in {llm_col} column.")
+            self.df = self.df.dropna(subset=[llm_col])
+            #raise ValueError("❌ Data contains NaN values in required columns.")
 
         # Convert to NumPy arrays
         human_ratings = self.df[self.human_cols].to_numpy()
@@ -133,7 +142,7 @@ class LLMGoodEnough:
         ).pvalue
 
 
-    def init_random_judge(self, min_score: int, max_score: int) -> np.ndarray:
+    def init_random_judge(self, min_score: int, max_score: int, seed: int = 42) -> np.ndarray:
         """
         Initialize a random judge as a comparison to the LLM-human judgements. The random judge
         is initialized with a random integer between the minimum and maximum value.
@@ -150,6 +159,7 @@ class LLMGoodEnough:
         np.ndarray
             Array of random integers between the minimum and maximum value.
         """
+        np.random.seed(seed)
         return np.random.randint(min_score, max_score + 1, size=len(self.df))
 
 
@@ -243,6 +253,96 @@ class LLMGoodEnough:
 
         plt.tight_layout()
         plt.show();
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to {save_path}")
+
+    def plot_model_vs_human_grid(
+        self,
+        model_disagreement_dict: dict,
+        human_human_disagreements: np.ndarray = None,
+        bins: np.ndarray = None,
+        bar_width: float = 0.35,
+        y_lim: float = 0.6,
+        save_path: str = None
+    ):
+        """
+        Plots a grid of model-vs-human disagreement histograms.
+
+        Parameters
+        ----------
+        model_disagreement_dict : dict
+            Dictionary where keys are model names and values are disagreement arrays.
+        human_human_disagreements : np.ndarray, optional
+            Array of human-human disagreements. If None, will be computed.
+        bins : np.ndarray, optional
+            Bins for the histogram. If None, will be inferred from data.
+        bar_width : float, optional
+            Width of the bars in the histogram.
+        y_lim : float, optional
+            Upper limit of the y-axis.
+        save_path : str, optional
+            Path to save the figure. If None, the figure will not be saved.
+        """
+        if human_human_disagreements is None:
+            human_human_disagreements = self.compute_human_disagreements()
+        if bins is None:
+            min_score = int(self.df[self.human_cols].min().min())
+            max_score = int(self.df[self.human_cols].max().max())
+            max_possible_disagreement = max_score - min_score
+            bins = np.arange(0, max_possible_disagreement + 2)
+
+        n_models = len(model_disagreement_dict)
+        n_cols = 2
+        n_rows = (n_models + 1) // 2
+
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 5 * n_rows))
+        axes = axes.flatten()
+
+        categories = np.arange(len(bins) - 1)
+
+        for ax, (name, data) in zip(axes, model_disagreement_dict.items()):
+            mean_model = round(np.mean(data), 2)
+            std_model = round(np.std(data), 2)
+            mean_human = round(np.mean(human_human_disagreements), 2)
+            std_human = round(np.std(human_human_disagreements), 2)
+            p_val = self.run_mannwhitneyu_test(data, human_human_disagreements)
+
+            # Plot human-human
+            ax.hist(human_human_disagreements, bins=bins, density=True, alpha=0.6, color='royalblue',
+                    label=f"Humans' diversity of opinion\nμ = {mean_human}, σ = {std_human}",
+                    width=bar_width, edgecolor='black', hatch="///")
+
+            # Plot model-human
+            ax.hist(data, bins=bins - 0.35, density=True, alpha=0.5, color='red',
+                    label=f'Human-Model deviation\nμ = {mean_model}, σ = {std_model}',
+                    width=bar_width, edgecolor='black', hatch="")
+
+            # Add p-value to legend
+            handles, labels = ax.get_legend_handles_labels()
+            handles.append(plt.Line2D([], [], color='none'))
+            legend = ax.legend(
+                handles=handles, labels=labels, loc='upper center', title=f"p-value = {p_val:.4f}",
+                edgecolor='black', facecolor='white', framealpha=1,
+                fontsize=13.5
+            )
+            legend.get_title().set_fontweight('bold')
+            legend.get_title().set_fontsize(13.5)
+
+            ax.set_title(name, fontweight='bold', fontsize=20)
+            ax.set_xlabel('Degree of Disagreement', fontsize=13.5)
+            ax.set_ylabel('Probability', fontsize=13.5)
+            ax.set_xticks(categories)
+            ax.set_xlim(min(categories) - bar_width - 0.1, max(categories) + bar_width + 0.1)
+            ax.set_ylim(0, y_lim)
+
+        # Hide any unused subplots
+        for i in range(len(model_disagreement_dict), len(axes)):
+            fig.delaxes(axes[i])
+
+        plt.tight_layout()
+        plt.show()
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
