@@ -16,24 +16,31 @@
 LLM-AS-A-JUDGE-GOOD-ENOUGH
 │
 ├── README.md
+├── __init__.py
+├── llm_as_a_judge
+│   ├── inference.py
+│   └── llm_as_a_judge.py
 ├── llm_good_enough
-│   ├── __init__.py
-│   ├── evaluator.py
-│   └── example.ipynb
+│   ├── __init__.py
+│   ├── evaluator.py
+│   └── example.ipynb
 ├── newsroom
-│   ├── prompts
-│   │   ├── Coherence_prompt.txt
-│   │   ├── Fluency_prompt.txt
-│   │   ├── Informativeness_prompt.txt
-│   │   └── Relevance_prompt.txt
-│   └── src
-│       └── analysis.ipynb
+│   ├── data.zip
+│   ├── prompts
+│   │   ├── Coherence_prompt.txt
+│   │   ├── Fluency_prompt.txt
+│   │   ├── Informativeness_prompt.txt
+│   │   └── Relevance_prompt.txt
+│   └── src
+│       └── analysis.ipynb
 ├── requirements.txt
 └── wmt-human
+    ├── data.zip
     ├── prompts
-    │   └── prompt.txt
+    │   └── prompt.txt
     └── src
         └── analysis.ipynb
+
 ```
 
 ### 1. Clone Repository
