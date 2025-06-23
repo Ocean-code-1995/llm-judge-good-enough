@@ -50,7 +50,7 @@ class LLMAsAJudge:
                 prompt = prompt.replace("{{ reference }}", row["reference"])
                 prompt = prompt.replace("{{ translation }}", row["translation"])
 
-            elif dataset_name == "wmt-machine":
+            elif dataset_name == "newsroom":
                 prompt = prompt.replace("{{ instance }}", row["instance"])
             else:
                 logger.error(f"❌ Unsupported dataset: {dataset_name}.")
