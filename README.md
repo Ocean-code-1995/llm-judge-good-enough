@@ -13,7 +13,7 @@
 
 ### 0. Repository Structure
 ```text
-```LLM-AS-A-JUDGE-GOOD-ENOUGH```
+LLM-AS-A-JUDGE-GOOD-ENOUGH
 │
 ├── README.md
 ├── llm_good_enough
