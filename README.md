@@ -11,6 +11,31 @@
 
 ## Getting Started
 
+### 0. Repository Structure
+```text
+```LLM-AS-A-JUDGE-GOOD-ENOUGH```
+│
+├── README.md
+├── llm_good_enough
+│   ├── __init__.py
+│   ├── evaluator.py
+│   └── example.ipynb
+├── newsroom
+│   ├── prompts
+│   │   ├── Coherence_prompt.txt
+│   │   ├── Fluency_prompt.txt
+│   │   ├── Informativeness_prompt.txt
+│   │   └── Relevance_prompt.txt
+│   └── src
+│       └── analysis.ipynb
+├── requirements.txt
+└── wmt-human
+    ├── prompts
+    │   └── prompt.txt
+    └── src
+        └── analysis.ipynb
+```
+
 ### 1. Clone Repository
 ```bash
 git clone https://github.com/Ocean-code-1995/LLM-as-a-Judge-good-enough.git
