@@ -96,7 +96,7 @@ LLM_Evaluator.visulize_good_enough(
 )
 ```
 
-`See the the folloiwng notebooks for more detailed examples:`
+`See the following notebooks for more detailed examples:`
 
     - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/llm_good_enough/example.ipynb
     - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/wmt-human/src/analysis.ipynb
