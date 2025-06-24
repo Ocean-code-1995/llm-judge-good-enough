@@ -8,7 +8,6 @@ import logging
 dotenv.load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
@@ -48,11 +47,11 @@ if __name__ == "__main__":
     df = df.head(3)
 
 
-    logger.info(f"✅ Loaded {len(df)} rows from {DATASET_NAME}")
+    logging.info(f"✅ Loaded {len(df)} rows from {DATASET_NAME}")
 
 
     # Run the inference
-    logger.info(f"🚀 Running inference for {DATASET_NAME} with {PROVIDER} {MODEL}.")
+    logging.info(f"🚀 Running inference for {DATASET_NAME} with {PROVIDER} {MODEL}.")
     llm_as_a_judge = LLMAsAJudge(
         model=MODEL,
         api_key=API_KEY,
@@ -60,11 +59,11 @@ if __name__ == "__main__":
         prompt_file_path=f"../{DATASET_NAME}/prompts/prompt.txt"
     )
     df = llm_as_a_judge.run_inference(dataset_name=DATASET_NAME, df=df)
-    logger.info(f"✅ Inference completed.")
+    logging.info(f"✅ Inference completed.")
 
     # Save the results
     df.to_csv(
         path_or_buf=f"../{DATASET_NAME}/data/llm_as_a_judge_{PROVIDER}_{MODEL}.csv",
         index=False
     )
-    logger.info(f"💾 Saved results to {DATASET_NAME}/data/llm_as_a_judge_{PROVIDER}_{MODEL}.csv")
+    logging.info(f"💾 Saved results to {DATASET_NAME}/data/llm_as_a_judge_{PROVIDER}_{MODEL}.csv")

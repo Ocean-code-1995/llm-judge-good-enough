@@ -4,7 +4,6 @@ import pandas as pd
 import logging
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class LLMAsAJudge:
@@ -32,7 +31,7 @@ class LLMAsAJudge:
             self.provider = "openai"
             openai.api_key = api_key
         else:
-            logger.error(f"❌ Unsupported model: {model}.")
+            logging.error(f"❌ Unsupported model: {model}.")
 
     def read_prompt(self, prompt_file_path: str) -> str:
         """Read the prompt from a file.
@@ -43,6 +42,10 @@ class LLMAsAJudge:
     def run_inference(self, dataset_name: str, df: pd.DataFrame) -> str:
         """Run LLM inference.
         """
+        # create a new column for the results
+        llm_as_a_judge_column_name = f"{self.model}_as_a_judge"
+        df[llm_as_a_judge_column_name] = ""
+
         for idx, row in df.iterrows():
 
             if dataset_name == "wmt-human":
@@ -57,7 +60,7 @@ class LLMAsAJudge:
             elif dataset_name == "newsroom":
                 prompt = self.prompt.replace("{{ instance }}", row["instance"])
             else:
-                logger.error(f"❌ Unsupported dataset: {dataset_name}.")
+                logging.error(f"❌ Unsupported dataset: {dataset_name}.")
                 break
 
             messages = [
@@ -71,7 +74,7 @@ class LLMAsAJudge:
                         messages=messages,
                         temperature=0.0
                     )
-                    df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+                    df.at[idx, llm_as_a_judge_column_name] = completion.choices[0].message.content
                     logging.info(f"✅ Processing row {idx}/{len(df)}.")
 
                 elif self.provider == "openai":
@@ -80,11 +83,11 @@ class LLMAsAJudge:
                         messages=messages,
                         temperature=0.0
                     )
-                    df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+                    df.at[idx, llm_as_a_judge_column_name] = completion.choices[0].message.content
                     logging.info(f"✅ Processing row {idx}/{len(df)}.")
 
             except Exception as e:
-                logger.error(f"❌ Index {idx}; Error:\n{e}")
-                df.at[idx, f"{self.model}_as_a_judge"] = "❌ Evaluation Error"
+                logging.error(f"❌ Index {idx}; Error:\n{e}")
+                df.at[idx, llm_as_a_judge_column_name] = "❌ Evaluation Error"
 
         return df
