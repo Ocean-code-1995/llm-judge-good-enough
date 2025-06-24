@@ -11,7 +11,7 @@
 
 ## Getting Started
 
-### 0. Repository Structure
+### ***`0. Repository Structure`***
 ```text
 LLM-AS-A-JUDGE-GOOD-ENOUGH
 │
@@ -43,7 +43,7 @@ LLM-AS-A-JUDGE-GOOD-ENOUGH
 
 ```
 
-### 1. Clone Repository
+### ***`1. Clone Repository`***
 ```bash
 git clone https://github.com/Ocean-code-1995/LLM_as_a_Judge_good_enough.git
 ```
@@ -52,7 +52,7 @@ git clone https://github.com/Ocean-code-1995/LLM_as_a_Judge_good_enough.git
 cd path/to/.../LLM_as_a_Judge_good_enough
 ```
 
-### 2. Install dependencies
+### ***`2. Install dependencies`***
 
 ##### Create conda envirnoment:
 ```bash
@@ -68,7 +68,19 @@ conda activate llm-good-enough
 pip install -r requirements.txt
 ```
 
-### 3. Usage Example
+### ***`3. Usage Example`***
+
+#### ***3.1 Run LLM-as-a-judge inference***
+
+```bash
+cd llm_as_a_judge
+```
+
+```bash
+python llm_as_a_judge.py
+```
+
+#### ***3.2 Is the selected LLM-as-a-judge good enough?***
 
 ```bash
 touch notebook_name.ipynb
