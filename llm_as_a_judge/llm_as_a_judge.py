@@ -46,32 +46,38 @@ class LLMAsAJudge:
         for idx, row in df.iterrows():
 
             if dataset_name == "wmt-human":
-                prompt = prompt.replace("{{ source }}", row["source"])
-                prompt = prompt.replace("{{ reference }}", row["reference"])
-                prompt = prompt.replace("{{ translation }}", row["translation"])
+                prompt = (
+                    self.prompt
+                    .replace("{{ source }}", row["source"])
+                    .replace("{{ reference }}", row["reference"])
+                    .replace("{{ translation }}", row["translation"])
+                )
+
 
             elif dataset_name == "newsroom":
-                prompt = prompt.replace("{{ instance }}", row["instance"])
+                prompt = self.prompt.replace("{{ instance }}", row["instance"])
             else:
                 logger.error(f"❌ Unsupported dataset: {dataset_name}.")
                 break
 
             messages = [
                 {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": self.prompt}
+                {"role": "user", "content": prompt}
             ]
             try:
                 if self.provider == "mistral":
                     completion = self.client.chat.complete(
                         model=self.model,
-                    messages=messages
+                        messages=messages,
+                        temperature=0.0
                     )
                     df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
 
                 elif self.provider == "openai":
                     completion = openai.chat.completions.create(
-                    model=self.model,
-                            messages=messages
+                        model=self.model,
+                        messages=messages,
+                        temperature=0.0
                     )
                     df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
 
