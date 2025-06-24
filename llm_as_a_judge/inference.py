@@ -2,9 +2,13 @@ import os
 import dotenv
 import pandas as pd
 import argparse
-from llm_as_a_judge.llm_as_a_judge import LLMAsAJudge
+from llm_as_a_judge import LLMAsAJudge
+import logging
 
 dotenv.load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
@@ -26,26 +30,41 @@ if __name__ == "__main__":
             "api_key": os.environ["OPENAI_API_KEY"]
         }
     }
-
-    # LLM-as-a-judge system prompt
-    system_prompt = "You are a fair and knowledgeable judge."
+    # set model, provider, dataset_name
+    # ------------------------------------------------------------
+    PROVIDER     = args.provider
+    MODEL        = model_config[PROVIDER].get("model")
+    API_KEY      = model_config[PROVIDER].get("api_key")
+    DATASET_NAME = args.dataset_name.lower()
+    SYSTEM_PROMPT = "You are a fair and knowledgeable judge."
+    # ------------------------------------------------------------
 
     # Read the dataset
-    df = pd.read_csv(f"../{args.dataset_name}/data/wmt-human_en_de.csv") \
-        if args.dataset_name == "wmt-human" \
-            else pd.read_csv(f"../{args.dataset_name}/data/newsroom-human-eval-converted.csv")
+    df = pd.read_csv(f"../{DATASET_NAME}/data/wmt-human_en_de.csv") \
+        if DATASET_NAME == "wmt-human" \
+            else pd.read_csv(f"../{DATASET_NAME}/data/newsroom-human-eval-converted.csv")
+
+    # for testing just take the first 10 rows
+    df = df.head(3)
+
+
+    logger.info(f"✅ Loaded {len(df)} rows from {DATASET_NAME}")
+
 
     # Run the inference
+    logger.info(f"🚀 Running inference for {DATASET_NAME} with {PROVIDER} {MODEL}.")
     llm_as_a_judge = LLMAsAJudge(
-        model=model_config[args.provider].get("model"),
-        api_key=model_config[args.provider].get("api_key"),
-        system_prompt=system_prompt,
-        prompt_file_path=f"../{args.dataset_name}/prompts/prompt.txt"
+        model=MODEL,
+        api_key=API_KEY,
+        system_prompt=SYSTEM_PROMPT,
+        prompt_file_path=f"../{DATASET_NAME}/prompts/prompt.txt"
     )
-    llm_as_a_judge.run_inference(args.dataset_name, df)
+    df = llm_as_a_judge.run_inference(dataset_name=DATASET_NAME, df=df)
+    logger.info(f"✅ Inference completed.")
 
     # Save the results
     df.to_csv(
-        f"../{args.dataset_name}/data/llm_as_a_judge_{args.provider}_{args.model}.csv",
+        path_or_buf=f"../{DATASET_NAME}/data/llm_as_a_judge_{PROVIDER}_{MODEL}.csv",
         index=False
     )
+    logger.info(f"💾 Saved results to {DATASET_NAME}/data/llm_as_a_judge_{PROVIDER}_{MODEL}.csv")

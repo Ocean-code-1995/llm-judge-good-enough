@@ -72,6 +72,7 @@ class LLMAsAJudge:
                         temperature=0.0
                     )
                     df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+                    logging.info(f"✅ Processing row {idx}/{len(df)}.")
 
                 elif self.provider == "openai":
                     completion = openai.chat.completions.create(
@@ -80,6 +81,7 @@ class LLMAsAJudge:
                         temperature=0.0
                     )
                     df.at[idx, f"{self.model}_as_a_judge"] = completion.choices[0].message.content
+                    logging.info(f"✅ Processing row {idx}/{len(df)}.")
 
             except Exception as e:
                 logger.error(f"❌ Index {idx}; Error:\n{e}")
