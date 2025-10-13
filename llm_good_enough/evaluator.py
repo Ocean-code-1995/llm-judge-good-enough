@@ -254,11 +254,21 @@ class LLMGoodEnough:
             ax.set_ylim(0, y_lim)
 
         plt.tight_layout()
-        plt.show();
 
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Figure saved to {save_path}")
+            # infer format automatically if not provided
+            if "." in save_path:
+                ext = save_path.split(".")[-1].lower()
+            else:
+                ext = "pdf"  # default to PDF if no extension given
+                save_path += ".pdf"
+
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', format=ext)
+            print(f"✅ Figure saved as {ext.upper()} → {save_path}")
+
+
+        plt.show();
+
 
     def plot_model_vs_human_grid(
         self,
@@ -344,8 +354,16 @@ class LLMGoodEnough:
             fig.delaxes(axes[i])
 
         plt.tight_layout()
-        plt.show()
 
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Figure saved to {save_path}")
+            # infer format automatically if not provided
+            if "." in save_path:
+                ext = save_path.split(".")[-1].lower()
+            else:
+                ext = "pdf"  # default to PDF if no extension given
+                save_path += ".pdf"
+
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', format=ext)
+            print(f"✅ Figure saved as {ext.upper()} → {save_path}")
+
+        plt.show()
