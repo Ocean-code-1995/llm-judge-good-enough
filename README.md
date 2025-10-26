@@ -20,10 +20,19 @@ LLM-AS-A-JUDGE-GOOD-ENOUGH
 ├── llm_as_a_judge
 │   ├── inference.py
 │   └── llm_as_a_judge.py
+│
 ├── llm_good_enough
 │   ├── __init__.py
 │   ├── evaluator.py
 │   └── example.ipynb
+│
+├── movielens
+│   ├── data.zip
+│   ├── prompts
+│   │   ├── movielen.txt
+│   └── src
+│       └── analysis.ipynb
+│
 ├── newsroom
 │   ├── data.zip
 │   ├── prompts
@@ -33,14 +42,22 @@ LLM-AS-A-JUDGE-GOOD-ENOUGH
 │   │   └── Relevance_prompt.txt
 │   └── src
 │       └── analysis.ipynb
-├── requirements.txt
-└── wmt-human
-    ├── data.zip
-    ├── prompts
-    │   └── prompt.txt
-    └── src
-        └── analysis.ipynb
-
+│
+├── politifact
+│   ├── data.zip
+│   ├── prompts
+│   │   ├── politifact.txt
+│   └── src
+│       └── analysis.ipynb
+│
+├─── wmt-human
+│    ├── data.zip
+│    ├── prompts
+│    │   └── prompt.txt
+│    └── src
+│        └── analysis.ipynb
+│
+└── requirements.txt
 ```
 
 ### ***`1. Clone Repository`***
