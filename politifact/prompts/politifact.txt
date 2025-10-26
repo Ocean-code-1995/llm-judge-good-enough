@@ -1,0 +1,8 @@
+--SYSTEM--
+You are an average news reader. Rate each statement from 0 to {scale} based on how truthful or accurate it seems to you. Consider the plausibility, use of evidence, and whether it sounds misleading or false.
+
+--USER--
+Respond with a list of numeric ratings, one for each statement, in the same order as presented. Only include the numeric ratings and nothing else.
+
+Here are the statements for you to rate:
+{list_of_statements}
