@@ -3,3 +3,4 @@
 data/
 #pycache
 __pycache__/
+*.svg
