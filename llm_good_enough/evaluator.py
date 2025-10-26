@@ -12,7 +12,12 @@ class LLMGoodEnough:
     """
     Is your selected LLM-as-a-judge good enough?
 
-    This class evaluates whether an LLM's performance is "good enough" and hence suitbale for automated evaluation tasks of other LLM generated outputs. It achieves this by creating two arrays of absolute differences between inter-human judgements as well as LLM-human judgements. Finally, LLM-human judgements are then compared to the inter-human judgements using a Mann-Whitney U test in order to determine if the selected candidate LLM is good enough.
+    This class evaluates whether an LLM's performance is "good enough" 
+    and hence suitbale for automated evaluation tasks of other LLM generated outputs. 
+    It achieves this by creating two arrays of absolute differences between inter-human 
+    judgements as well as LLM-human judgements. Finally, LLM-human judgements are then compared 
+    to the inter-human judgements using a Mann-Whitney U test in order to determine 
+    if the selected candidate LLM is good enough.
 
     Corresponding paper: https://arxiv.org/abs/--->>>ToBeAnnounced<<<---
 
@@ -23,7 +28,12 @@ class LLMGoodEnough:
     ```
     """
 
-    def __init__(self, df: pd.DataFrame, human_cols: list[str], min_score: int, max_score: int) -> None:
+    def __init__(
+            self, df: pd.DataFrame,
+            human_cols: list[str],
+            min_score: int,
+            max_score: int
+        ) -> None:
         """
         Initialize the LLM Good Enough evaluator instance.
 
@@ -40,29 +50,104 @@ class LLMGoodEnough:
         max_score : int
             Maximum score for the random judge.
         """
-        self.df = df
+        self.df = df.copy()
         self.human_cols = human_cols
         self.min_score = min_score
         self.max_score = max_score
-        self.df['RANDOM_as_a_judge'] = self.init_random_judge(min_score=self.min_score, max_score=self.max_score)
 
-        # Validate human columns exist
-        missing_cols = [col for col in human_cols if col not in df.columns]
+        # --- Initialization pipeline ---
+        self._validate_human_columns()
+        self._filter_minimum_raters(min_raters=2)
+        self._add_random_judge()
+    
+    def _validate_human_columns(self) -> None:
+        """
+        Validate that all specified human rating columns exist in the input DataFrame
+        and that at least two are provided.
+
+        Raises
+        ------
+        ValueError
+            If any specified column name is missing from the DataFrame.
+        ValueError
+            If fewer than two human columns are provided.
+
+        Notes
+        -----
+        This check ensures that the dataset has enough valid human annotators
+        to compute inter-human disagreement distributions.
+        """
+        missing_cols = [c for c in self.human_cols if c not in self.df.columns]
         if missing_cols:
-            raise ValueError(
-                f"❌ Human columns not found in DataFrame: {missing_cols}"
-            )
+            raise ValueError(f"❌ Human columns not found in DataFrame: {missing_cols}")
 
-        if len(human_cols) < 2:
-            raise ValueError("❌ At least two human columns are required.")
+        if len(self.human_cols) < 2:
+            raise ValueError("❌ At least two human columns are required for disagreement analysis.")
 
-        # Check for NaN values in human columns
-        if df[human_cols].isna().any().any():
-            raise ValueError("❌ Data contains NaN values in human columns.")
+        print(f"✅ Found {len(self.human_cols)} valid human annotator columns.")
 
+
+    def _filter_minimum_raters(self, min_raters: int = 2) -> None:
+        """
+        Filter the dataset to include only cases (rows) that have at least a
+        minimum number of non-missing human ratings.
+
+        Parameters
+        ----------
+        min_raters : int, default=2
+            Minimum number of human annotators required for a case to be retained.
+
+        Raises
+        ------
+        ValueError
+            If no rows remain after filtering for the specified number of annotators.
+
+        Notes
+        -----
+        This method ensures that each remaining case can produce at least one
+        valid inter-human pairwise difference. Cases with fewer than `min_raters`
+        annotators are discarded, as they cannot contribute to the comparison.
+        """
+        # Count non-null human ratings per row
+        self.df = self.df.copy()  # ensures we don't modify a view
+        self.df.loc[:, "n_raters"] = self.df[self.human_cols].notna().sum(axis=1)
+        n_before = len(self.df)
+
+        # Keep only rows with enough human raters
+        self.df = self.df[self.df["n_raters"] >= min_raters].copy()
+        n_after = len(self.df)
+
+        if n_after == 0:
+            raise ValueError(f"❌ No rows have ≥{min_raters} human annotators. Cannot proceed.")
+
+        print(f"✅ Keeping {n_after}/{n_before} rows with ≥{min_raters} human annotators.")
+
+
+    def _add_random_judge(self) -> None:
+        """
+        Add a baseline random judge column to the dataset.
+
+        The random judge produces uniformly random integer scores in the
+        same rating range as the human and LLM annotators. This provides
+        a comparison baseline for the LLM-as-a-judge analysis.
+
+        Notes
+        -----
+        This method calls `init_random_judge()` internally and adds the resulting
+        column ('RANDOM_as_a_judge') to `self.df`.
+        """
+        self.df["RANDOM_as_a_judge"] = self.init_random_judge(
+            min_score=self.min_score,
+            max_score=self.max_score
+        )
+        print("✅ Added random judge baseline column: 'RANDOM_as_a_judge'")
+
+
+    # --- Core disagreement computations ---
     def compute_human_disagreements(self) -> np.ndarray:
         """
-        Vectorized computation of all pairwise absolute differences between human raters per case.
+        Vectorized computation of all available pairwise absolute differences 
+        between human raters per case.
 
         Returns
         -------
@@ -70,51 +155,59 @@ class LLMGoodEnough:
             Flattened array of all pairwise absolute disagreements.
         """
 
-        # Select only human columns and convert to numpy
-        data = self.df[self.human_cols].to_numpy()
-
-        # Compute pairwise differences per row for all combinations
-        comb_indices = list(combinations(range(data.shape[1]), 2))
-
-        diffs = np.abs([data[:, i] - data[:, j] for i, j in comb_indices])
-        return diffs.flatten()
+        diffs = []
+        for _, row in self.df[self.human_cols].iterrows():
+            # extract non-nan values
+            vals = row.dropna().to_numpy()
+            # only compute if at least 2 values (raters) are present
+            if len(vals) >= 2:
+                # upper triangle pairwise differences
+                diffs.extend(
+                    np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
+                )
+        if not diffs:
+            raise ValueError(
+                "❌ No valid human-human pairs found (check your input data)."
+            )
+        return np.array(diffs)
 
 
     def compute_llm_human_disagreements(self, llm_col: str) -> np.ndarray:
         """
-        Vectorized computation of absolute differences between LLM and each human judge per case.
+        Compute absolute differences between LLM and all available human judges per case.
 
         Parameters
         ----------
         llm_col : str
-            Column name for the LLM judge's ratings.
+            Column name for the LLM judge.
 
         Returns
         -------
         np.ndarray
-            Array of absolute differences (LLM vs. each human) across all cases.
+            Flattened array of LLM-human absolute disagreements.
         """
         if llm_col not in self.df.columns:
             raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
 
-        # Check for NaN values in llm column
-        if self.df[llm_col].isna().any().any():
-            print(f"❌ Data contains NaN values in {llm_col} column.")
-            # drop rows with nan in llm_col
-            print(f"✅Dropping {self.df[self.df[llm_col].isna()].shape[0]} rows with nan in {llm_col} column.")
-            self.df = self.df.dropna(subset=[llm_col])
-            #raise ValueError("❌ Data contains NaN values in required columns.")
+        diffs = []
+        # iterate over each row
+        for _, row in self.df[[llm_col] + self.human_cols].iterrows():
+            # extract LLM value
+            llm_val = row[llm_col]
+            # only compute if LLM value is not nan
+            if pd.notna(llm_val):
+                vals = row[self.human_cols].dropna().to_numpy()
+                diffs.extend(
+                    np.abs(vals - llm_val)
+                )
+        if not diffs:
+            raise ValueError(
+                "❌ No valid LLM-human pairs found (check for missing ratings)."
+            )
+        return np.array(diffs)
 
-        # Convert to NumPy arrays
-        human_ratings = self.df[self.human_cols].to_numpy()
-        llm_ratings = self.df[llm_col].to_numpy().reshape(-1, 1)  # column vector for broadcasting
 
-        # Compute absolute differences: each human col vs. LLM
-        differences = np.abs(human_ratings - llm_ratings)
-
-        return differences.flatten()
-
-
+    # --- Utility methods ---
     @staticmethod
     def run_mannwhitneyu_test(
         llm_human_disagreements: np.ndarray,
@@ -164,8 +257,27 @@ class LLMGoodEnough:
         np.random.seed(seed)
         return np.random.randint(min_score, max_score + 1, size=len(self.df))
 
+    # --- Summary stats ---
+    def summarize(self, llm_col: str) -> None:
+        """
+        Summarize the disagreement statistics.
+        
+        Parameters
+        ----------
+        llm_col : str
+            Column name for the LLM judge's ratings.
+        """
+        human_diffs = self.compute_human_disagreements()
+        llm_diffs = self.compute_llm_human_disagreements(llm_col)
+        p_val = self.run_mannwhitneyu_test(llm_diffs, human_diffs)
+        print(f"Human–Human mean: {np.mean(human_diffs):.2f}")
+        print(f"LLM–Human mean: {np.mean(llm_diffs):.2f}")
+        print(f"Mann–Whitney p-value: {p_val:.4f}")
 
-    def visulize_good_enough(self, llm_col: str, y_lim: float, save_path: str = None) -> None:
+
+
+    # --- Visualization methods ---
+    def visualize_good_enough(self, llm_col: str, y_lim: float, save_path: str = None) -> None:
         """
         Visualize the LLM-as-a-judge performance compared to human judges and a random baseline.
 
@@ -173,101 +285,92 @@ class LLMGoodEnough:
         ----------
         llm_col : str
             Column name for the LLM judge's ratings.
-        min_score : int, optional
-            Minimum possible score in the rating scale. If None, will be inferred from data.
-        max_score : int, optional
-            Maximum possible score in the rating scale. If None, will be inferred from data.
         y_lim : float
             Upper limit of the y-axis.
         save_path : str, optional
             Path to save the figure. If None, the figure will not be saved.
         """
+        print("📊 Computing disagreement distributions...")
+
         # 1) Compute disagreement distributions
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 1.1) human-human
         human_human_disagreements = self.compute_human_disagreements()
-
-        # 1.2) llm-human
         llm_human_disagreements = self.compute_llm_human_disagreements(llm_col)
-
-        # random judge
-        random_judge = self.init_random_judge(min_score=self.min_score, max_score=self.max_score)
-        self.df['RANDOM_as_a_judge'] = random_judge
-        random_judge_disagreements = self.compute_llm_human_disagreements('RANDOM_as_a_judge')
+        random_human_disagreements = self.compute_llm_human_disagreements("RANDOM_as_a_judge")
 
         model_vs_human_distributions = {
-            'llm-human': llm_human_disagreements,
-            'random-human': random_judge_disagreements
+            "llm-human": llm_human_disagreements,
+            "random-human": random_human_disagreements
         }
 
-        # 3) Plot
+        # 2) Plot setup
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-        fig.suptitle(f"LLM-as-a-judge good enough?", fontsize=22, fontweight='bold')
+        fig.suptitle("LLM-as-a-judge good enough?", fontsize=22, fontweight="bold")
         axes = axes.flatten()
 
-        # Dynamic bins based on score range
         max_possible_disagreement = self.max_score - self.min_score
-        bins = np.arange(0, max_possible_disagreement + 2)  # +2 to include the max disagreement value
+        bins = np.arange(0, max_possible_disagreement + 2)
         bar_width = 0.35
         categories = np.arange(len(bins) - 1)
 
+        # 3) Plot histograms
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         for ax, (name, data) in zip(axes, model_vs_human_distributions.items()):
-            human_human_mean, human_human_std = round(np.mean(human_human_disagreements), 2), round(np.std(human_human_disagreements), 2)
-            llm_human_mean, llm_human_std = round(np.mean(data), 2), round(np.std(data), 2)
-
-            # Calculate p-value for this comparison
+            # Compute stats
+            human_mean, human_std = round(np.mean(human_human_disagreements), 2), round(np.std(human_human_disagreements), 2)
+            model_mean, model_std = round(np.mean(data), 2), round(np.std(data), 2)
             p_val = self.run_mannwhitneyu_test(data, human_human_disagreements)
 
-            # Plot human-human
+            # Plot human-human disagreements
             ax.hist(
-                human_human_disagreements, bins=bins, density=True, alpha=0.6, color='royalblue',
-                label=f"Humans' diversity of opinion\nμ = {human_human_mean}, σ = {human_human_std}",
-                width=bar_width, edgecolor='black', hatch="///"
+                human_human_disagreements, bins=bins, density=True, alpha=0.6, color="royalblue",
+                label=f"Humans' diversity of opinion\nμ = {human_mean}, σ = {human_std}",
+                width=bar_width, edgecolor="black", hatch="///"
             )
 
-            # Plot llm-human
+            # Plot model-human disagreements
             ax.hist(
-                data, bins=bins - 0.35, density=True, alpha=0.5, color='red',
-                label=f'Human-Model deviation\nμ = {llm_human_mean}, σ = {llm_human_std}',
-                width=bar_width, edgecolor='black', hatch=""
+                data, bins=bins - 0.35, density=True, alpha=0.5, color="red",
+                label=f"Human-Model deviation\nμ = {model_mean}, σ = {model_std}",
+                width=bar_width, edgecolor="black", hatch=""
             )
 
             # Add p-value to legend
-            handles, labels = ax.get_legend_handles_labels()
-            handles.append(plt.Line2D([], [], color='none'))
-
+            #handles, labels = ax.get_legend_handles_labels()
+            #handles.append(plt.Line2D([], [], color="none"))
             legend = ax.legend(
-                handles=handles, labels=labels, loc='upper center', title=f"p-value = {p_val:.4f}",
-                edgecolor='black', facecolor='white', framealpha=1,
-                fontsize=14.5
-                )
-            legend.get_title().set_fontweight('bold')
+                #handles=handles, labels=labels, 
+                loc="upper center", title=f"p-value = {p_val:.4f}",
+                edgecolor="black", facecolor="white", framealpha=1, fontsize=14.5
+            )
+            legend.get_title().set_fontweight("bold")
             legend.get_title().set_fontsize(13.5)
 
-            ax.set_title(name, fontweight='bold', fontsize=20)
-            ax.set_xlabel('Degree of Disagreement', fontsize=17)
-            ax.set_ylabel('Probability', fontsize=17)
+            # Axis formatting (identical to original style)
+            ax.set_title(name, fontweight="bold", fontsize=20)
+            ax.set_xlabel("Degree of Disagreement", fontsize=17)
+            ax.set_ylabel("Probability", fontsize=17)
             ax.set_xticks(categories)
             ax.set_yticks(np.arange(0, 0.6, 0.1))
-            ax.tick_params(axis='both', which='major', labelsize=13)
+            ax.tick_params(axis="both", which="major", labelsize=13)
             ax.set_xlim(min(categories) - bar_width - 0.1, max(categories) + bar_width + 0.1)
             ax.set_ylim(0, y_lim)
 
         plt.tight_layout()
 
+        # 4) Save figure if requested
         if save_path:
-            # infer format automatically if not provided
             if "." in save_path:
                 ext = save_path.split(".")[-1].lower()
             else:
-                ext = "pdf"  # default to PDF if no extension given
+                ext = "pdf"
                 save_path += ".pdf"
-
-            plt.savefig(save_path, dpi=300, bbox_inches='tight', format=ext)
+            plt.savefig(save_path, dpi=300, bbox_inches="tight", format=ext)
             print(f"✅ Figure saved as {ext.upper()} → {save_path}")
 
+        plt.show()
 
-        plt.show();
 
 
     def plot_model_vs_human_grid(
@@ -278,7 +381,7 @@ class LLMGoodEnough:
         bar_width: float = 0.35,
         y_lim: float = 0.6,
         save_path: str = None
-    ):
+    ) -> None:
         """
         Plots a grid of model-vs-human disagreement histograms.
 
