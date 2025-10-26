@@ -435,10 +435,11 @@ class LLMGoodEnough:
                     width=bar_width, edgecolor='black', hatch="")
 
             # Add p-value to legend
-            handles, labels = ax.get_legend_handles_labels()
-            handles.append(plt.Line2D([], [], color='none'))
+            #handles, labels = ax.get_legend_handles_labels()
+            #handles.append(plt.Line2D([], [], color='none'))
             legend = ax.legend(
-                handles=handles, labels=labels, loc='upper center', title=f"p-value = {p_val:.4f}",
+                #handles=handles, labels=labels, 
+                loc='upper center', title=f"p-value = {p_val:.4f}",
                 edgecolor='black', facecolor='white', framealpha=1,
                 fontsize=13.5
             )
