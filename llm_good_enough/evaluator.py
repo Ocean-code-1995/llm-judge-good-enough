@@ -32,7 +32,8 @@ class LLMGoodEnough:
             self, df: pd.DataFrame,
             human_cols: list[str],
             min_score: int,
-            max_score: int
+            max_score: int,
+            seed: int = None
         ) -> None:
         """
         Initialize the LLM Good Enough evaluator instance.
@@ -49,16 +50,52 @@ class LLMGoodEnough:
             Minimum score for the random judge.
         max_score : int
             Maximum score for the random judge.
+        seed : int, optional
+            Random seed for reproducibility. If None, a random seed will be generated.
+            Note, that across executions the seeds will differ if None is provided.
         """
         self.df = df.copy()
         self.human_cols = human_cols
         self.min_score = min_score
         self.max_score = max_score
 
+        # Initialize and apply seed
+        self.seed = self._init_seed(seed)
+        self._set_global_seed(self.seed)
+        print(f"🎲 Random seed: {self.seed}")
+
         # --- Initialization pipeline ---
         self._validate_human_columns()
         self._filter_minimum_raters(min_raters=2)
         self._add_random_judge()
+
+    def _init_seed(self, seed: int | None) -> int:
+        """
+        Initialize or validate the random seed.
+        Generates a new valid seed if none is provided.
+        Note that across executions the seeds will differ if None is provided.
+        """
+        if seed is None:
+            # Generate a random valid 32-bit integer seed
+            return int(np.random.SeedSequence().generate_state(1)[0])
+        if not (0 <= seed <= 2**32 - 1):
+            raise ValueError("❌ Seed must be between 0 and 2**32 - 1")
+        return int(seed)
+
+    def _set_global_seed(self, seed: int) -> None:
+        """
+        Apply the seed globally for deterministic behavior.
+        """
+        np.random.seed(seed)
+        random.seed(seed)
+
+    def reseed(self, new_seed: int | None = None) -> None:
+        """
+        Reseed the RNGs mid-session. If no seed provided, generate a new one.
+        """
+        self.seed = self._init_seed(new_seed)
+        self._set_global_seed(self.seed)
+        print(f"🔁 RNGs reseeded with: {self.seed}")
     
     def _validate_human_columns(self) -> None:
         """
@@ -254,8 +291,10 @@ class LLMGoodEnough:
         np.ndarray
             Array of random integers between the minimum and maximum value.
         """
-        np.random.seed(seed)
-        return np.random.randint(min_score, max_score + 1, size=len(self.df))
+        rng = np.random.default_rng(self.seed)
+        return rng.integers(
+            min_score, max_score + 1, size=len(self.df)
+        )
 
     # --- Summary stats ---
     def summarize(self, llm_col: str) -> None:
