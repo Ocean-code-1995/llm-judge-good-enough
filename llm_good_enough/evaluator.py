@@ -8,6 +8,7 @@ import seaborn as sns
 sns.set_theme(style="whitegrid")
 
 
+
 class LLMGoodEnough:
     """
     Is your selected LLM-as-a-judge good enough?
@@ -33,7 +34,8 @@ class LLMGoodEnough:
             human_cols: list[str],
             min_score: int,
             max_score: int,
-            seed: int = None
+            verbosity: int = 1,
+            seed: int = None,
         ) -> None:
         """
         Initialize the LLM Good Enough evaluator instance.
@@ -50,6 +52,8 @@ class LLMGoodEnough:
             Minimum score for the random judge.
         max_score : int
             Maximum score for the random judge.
+        verbosity : bool, default=True
+            If True, print progress and status messages during initialization.
         seed : int, optional
             Random seed for reproducibility. If None, a random seed will be generated.
             Note, that across executions the seeds will differ if None is provided.
@@ -58,11 +62,13 @@ class LLMGoodEnough:
         self.human_cols = human_cols
         self.min_score = min_score
         self.max_score = max_score
+        self.verbosity = verbosity
 
         # Initialize and apply seed
         self.seed = self._init_seed(seed)
         self._set_global_seed(self.seed)
-        print(f"🎲 Random seed: {self.seed}")
+        if self.verbosity > 0:
+            print(f"🎲 Random seed: {self.seed}")
 
         # --- Initialization pipeline ---
         self._validate_human_columns()
@@ -95,7 +101,8 @@ class LLMGoodEnough:
         """
         self.seed = self._init_seed(new_seed)
         self._set_global_seed(self.seed)
-        print(f"🔁 RNGs reseeded with: {self.seed}")
+        if self.verbosity > 0:
+            print(f"🔁 RNGs reseeded with: {self.seed}")
     
     def _validate_human_columns(self) -> None:
         """
@@ -120,8 +127,8 @@ class LLMGoodEnough:
 
         if len(self.human_cols) < 2:
             raise ValueError("❌ At least two human columns are required for disagreement analysis.")
-
-        print(f"✅ Found {len(self.human_cols)} valid human annotator columns.")
+        if self.verbosity > 0:  
+            print(f"✅ Found {len(self.human_cols)} valid human annotator columns.")
 
 
     def _filter_minimum_raters(self, min_raters: int = 2) -> None:
@@ -156,8 +163,8 @@ class LLMGoodEnough:
 
         if n_after == 0:
             raise ValueError(f"❌ No rows have ≥{min_raters} human annotators. Cannot proceed.")
-
-        print(f"✅ Keeping {n_after}/{n_before} rows with ≥{min_raters} human annotators.")
+        if self.verbosity > 0:
+            print(f"✅ Keeping {n_after}/{n_before} rows with ≥{min_raters} human annotators.")
 
 
     def _add_random_judge(self) -> None:
@@ -177,7 +184,8 @@ class LLMGoodEnough:
             min_score=self.min_score,
             max_score=self.max_score
         )
-        print("✅ Added random judge baseline column: 'RANDOM_as_a_judge'")
+        if self.verbosity > 0:
+            print("✅ Added random judge baseline column: 'RANDOM_as_a_judge'")
 
 
     # --- Core disagreement computations ---
@@ -508,5 +516,117 @@ class LLMGoodEnough:
 
             plt.savefig(save_path, dpi=300, bbox_inches='tight', format=ext)
             print(f"✅ Figure saved as {ext.upper()} → {save_path}")
+
+        plt.show()
+
+    def reseed_and_refresh(self) -> None:
+        """
+        Reseed the RNGs and refresh the random judge column in-place.
+        This is used for repeated randomization analyses without re-instantiating the class.
+        """
+        self.reseed(None)
+        self.df["RANDOM_as_a_judge"] = self.init_random_judge(
+            min_score=self.min_score,
+            max_score=self.max_score
+        )
+
+    
+    def visualize_robustness(
+        self,
+        llm_col: str,
+        iterations: int = 25,
+        save_path: str = None,
+        include_annotations: bool = True,
+    ) -> None:
+        """
+        Run multiple randomized evaluations (with in-place reseeding) and visualize
+        the robustness of LLM-vs-human significance and disagreement metrics.
+
+        Notes
+        -----
+        This visualization uses the same evaluator instance and reseeds it in-place
+        for efficiency. Inner loop is always silent regardless of verbosity.
+        """
+        results = []
+
+        # --- Monte Carlo simulation ---
+        for _ in range(iterations):
+            # reseed + refresh the random judge in-place
+            self.reseed_and_refresh()
+
+            # compute all disagreements
+            human_dis = self.compute_human_disagreements()
+            llm_dis = self.compute_llm_human_disagreements(llm_col)
+            rand_dis = self.compute_llm_human_disagreements("RANDOM_as_a_judge")
+
+            # collect stats
+            for model_name, dis in [
+                (llm_col, llm_dis),
+                ("Random Judge", rand_dis)
+            ]:
+                pval = self.run_mannwhitneyu_test(dis, human_dis)
+                mean_diff = np.mean(dis) - np.mean(human_dis)
+                results.append({
+                    "model": model_name,
+                    "p_value": pval,
+                    "mean_diff": mean_diff
+                })
+
+        results = pd.DataFrame(results)
+
+        # --- plotting setup ---
+        sns.set_theme(style="whitegrid", font_scale=1.2)
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        fig.suptitle(
+            "Robustness of 'LLM-as-a-Judge' Evaluation Across Random Seeds",
+            fontsize=18, fontweight="bold"
+        )
+
+        # Panel A: p-value distribution
+        sns.kdeplot(data=results, x="p_value", hue="model", fill=True, ax=axes[0])
+        axes[0].axvline(0.05, color="black", linestyle="--")
+        axes[0].set_title("(A) P-value Distribution", fontweight="bold")
+        axes[0].set_xlabel("Mann–Whitney p-value")
+
+        # Panel B: Δ Mean Disagreement
+        sns.boxplot(data=results, x="model", y="mean_diff", ax=axes[1], width=0.5)
+        axes[1].axhline(0, color="black", linestyle="--")
+        axes[1].set_title("(B) Δ Mean Disagreement", fontweight="bold")
+        axes[1].set_ylabel("Mean(Model–Human) − Mean(Human–Human)")
+        axes[1].set_xlabel("")
+
+        # Panel C: ΔMean vs p-value
+        sns.scatterplot(
+            data=results, x="mean_diff", y="p_value",
+            hue="model", style="model", s=70, ax=axes[2]
+        )
+        axes[2].axhline(0.05, color="black", linestyle="--")
+        axes[2].set_title("(C) ΔMean vs p-value", fontweight="bold")
+        axes[2].set_xlabel("Δ Mean Disagreement")
+        axes[2].set_ylabel("Mann–Whitney p-value")
+
+        plt.tight_layout()
+
+        # --- optional summary annotations ---
+        if include_annotations:
+            summary = results.groupby("model")["p_value"].agg(
+                median_pval="median",
+                fraction_significant=lambda x: (x < 0.05).mean()
+            )
+            y_pos = -0.18
+            for idx, (model, row) in enumerate(summary.iterrows()):
+                fig.text(
+                    0.17 + idx * 0.28, y_pos,
+                    f"{model}: median p = {row['median_pval']:.3f}, "
+                    f"{row['fraction_significant']*100:.1f}% < 0.05",
+                    ha="center", fontsize=11.5
+                )
+
+        # --- save figure if requested ---
+        if save_path:
+            ext = save_path.split(".")[-1] if "." in save_path else "pdf"
+            plt.savefig(save_path, dpi=300, bbox_inches="tight", format=ext)
+            if self.verbosity > 0:
+                print(f"✅ Robustness figure saved as {ext.upper()} → {save_path}")
 
         plt.show()
