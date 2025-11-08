@@ -1,7 +1,7 @@
 # ***`When is an LLM-as-a-judge good enough?`***
 ---
 ---
-# ***`Abstract`***
+## ***`Abstract`***
 
 *Generative AI models allow us to generate human-like content, such as large language models (LLMs) generate texts. However, such created contend can only be used to automate processes if certain requirements regarding trustworthiness and correctness are fulfilled. In order to relieve people from controlling the created content, a concept known as LLM-as-a-judge is available. In this scenario, another instance of an LLM is prompted to act as a judge, and check a created text for certain quality requirements. However, such a judgement might not always align with a human judgement, which requires benchmarking the LLM-judge as well. Since a full alignment might not be achieved, the question is answered in this work, when an LLM-as-a-judge is good enough to judge a specific task fulfillment to break evaluating evaluations. For this purpose, it is made use of the fact that for evaluating generative content, judgements from different human evaluators can also differ as there might be no universal or unequivocally assessment of the quality, called a diversity of opinion. As long as the deviations of the LLM-judge from human estimations remain within the human diversity of opinion, it is suggested to call an LLM-judge as good enough.*
 
@@ -9,7 +9,36 @@
 
 > ***`Paper accessible at the following link:`*** xxxxxxxx.xx
 
-## Getting Started
+## ***`General Approach — Is the LLM “Good Enough”?`***
+
+The goal is to test whether a language model’s judgments align with human-level variability — that is, whether it behaves like *another human judge* rather than a random or systematically biased rater.
+
+#### 1. **Measure Inter-Human Disagreement**
+For each task or item, multiple human raters provide scores.  
+All **pairwise absolute differences** between human scores are computed, forming a distribution that captures the *natural variability* in human judgment — the “diversity of human opinion.”
+
+#### 2. **Measure Human-LLM Disagreement**
+For the same items, the **absolute difference** between each human score and the LLM’s score is calculated.  
+This yields a second distribution describing how much the LLM diverges from humans.
+
+#### 3. **Compare Distributions Statistically**
+A **Mann–Whitney U test** compares the two distributions of disagreement magnitudes:  
+- **Null hypothesis (H₀):** the LLM’s disagreement with humans is *not greater* than the typical disagreement among humans — the LLM behaves within normal human variability.  
+- **Alternative hypothesis (H₁):** the LLM’s disagreement with humans is *greater* than that among humans — meaning the LLM and humans do **not agree** to the same extent as humans agree with each other.  
+
+If the resulting *p*-value is **high (≥ 0.05)**, there is no evidence that the LLM’s disagreement differs from human-level variability — suggesting it is *“good enough.”*  
+If it is **low (< 0.05)**, the LLM’s disagreement is significantly larger, indicating it diverges meaningfully from human judgment and is *not yet human-like.*
+
+
+#### 4. **Establish a Random Baseline**
+To calibrate expectations, a **random judge** is simulated by assigning scores uniformly across the rating range.  
+This random baseline provides a clear contrast — it typically shows high disagreement and significant differences from humans, marking what “not good enough” looks like.
+
+> **In essence:**  
+> The method tests whether an LLM’s variability in judgment falls within the *natural human range* rather than resembling random noise.
+
+
+## ***Getting Started***
 
 ### ***`0. Repository Structure`***
 ```text
@@ -130,3 +159,77 @@ LLM_Evaluator.visulize_good_enough(
     - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/llm_good_enough/example.ipynb
     - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/wmt-human/src/analysis.ipynb
     - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/newsroom/src/analysis.ipynb
+
+
+---
+
+## ***`Analysis Methodologies`***
+
+
+### **Disagreement Distribution Comparison**
+Implemented in `visualize_good_enough()`, this plot directly compares the **distribution of human–human**, **LLM–human**, and **random–human** disagreements.  
+It visually illustrates whether the LLM’s disagreement pattern overlaps with natural human variability or drifts toward random behavior.
+
+### **Multi-Model Comparison Grid**
+Implemented in `plot_model_vs_human_grid()`, this method extends the same logic to multiple candidate models.  
+It allows quick visual comparison across several LLMs to identify which behave most like human judges.
+
+
+### ***Robustness Visualization***
+The robustness visualization assesses how *consistent* and *human-like* the LLM’s judgments are across multiple randomized evaluations.  
+Each iteration reseeds the random judge, recomputes disagreement distributions, and runs a Mann–Whitney U test comparing the LLM and random judge against human disagreement.  
+For every run, two values are recorded per model:
+- The **Δ mean disagreement** = mean(Model–Human) − mean(Human–Human)  
+- The **p-value** from the Mann–Whitney test.  
+
+These values are aggregated across runs to generate the following three panels:
+
+#### **Panel (A) — P-value Distribution**
+**How it’s computed:**  
+All *p*-values from repeated runs are collected and plotted as distributions (via kernel density estimation) for the LLM and the random judge.  
+
+**Interpretation:**  
+This panel shows how often each judge’s disagreement with humans is *statistically different* from human–human disagreement.  
+If most values lie **above the 0.05 dashed line**, it means differences are not significant — the judge behaves within human variability.  
+If they lie **below**, disagreements are consistently significant — the judge diverges from humans.
+
+**Why it’s useful:**  
+It reveals the *statistical reliability* of the LLM’s alignment with human judgment across random seeds.  
+A strong model’s curve should sit high and right (mostly non-significant), while the random baseline clusters left and below 0.05.
+
+---
+
+#### **Panel (B) — Δ Mean Disagreement (Boxplot)**
+**How it’s computed:**  
+For each run, compute the Δ mean disagreement — the difference in average disagreement between each model and the human baseline.  
+The resulting values across runs are summarized as boxplots for the LLM and random judge.
+
+**Interpretation:**  
+This panel shows how much and how consistently the model’s disagreement deviates from human–human variability.  
+Δ mean ≈ 0 → behaves like humans.  
+Δ mean > 0 → disagrees more than humans.  
+Δ mean < 0 → disagrees less (possibly over-consistent).
+
+**Why it’s useful:**  
+It visualizes *effect size stability* — whether the LLM’s deviation from humans is small and consistent (good) or large and erratic (bad).  
+A narrow, centered box for the LLM and a wide, higher one for the random judge indicate robustness.
+
+---
+
+#### **Panel (C) — Δ Mean vs P-value (Scatterplot)**
+**How it’s computed:**  
+Each run provides a paired (Δ mean, *p*-value). These pairs are plotted — x-axis = Δ mean (effect size), y-axis = *p*-value (significance).
+
+**Interpretation:**  
+This panel links the *size* of disagreement with the *strength* of statistical evidence for it.  
+Points high on the plot (large *p*) indicate human-like behavior; points low and right (large Δ, small *p*) show strong divergence.
+
+**Why it’s useful:**  
+It bridges *practical difference* and *statistical certainty*, showing whether large deviations consistently translate into significant differences.  
+Ideally, the LLM clusters near the top (non-significant, human-like) while the random judge clusters lower and farther right (significantly worse).
+
+---
+
+> **In essence:**  
+> Panels (A), (B), and (C) together evaluate whether the LLM’s disagreement pattern is *consistently within human variability*,  
+> and whether that conclusion remains *robust* across randomized baselines.
