@@ -1,3 +1,4 @@
+from turtle import color
 import pandas as pd
 import numpy as np
 import random
@@ -536,7 +537,6 @@ class LLMGoodEnough:
         llm_col: str,
         iterations: int = 25,
         save_path: str = None,
-        include_annotations: bool = True,
     ) -> None:
         """
         Run multiple randomized evaluations (with in-place reseeding) and visualize
@@ -598,7 +598,7 @@ class LLMGoodEnough:
         # Panel C: ΔMean vs p-value
         sns.scatterplot(
             data=results, x="mean_diff", y="p_value",
-            hue="model", style="model", s=70, ax=axes[2]
+            hue="model", style="model", s=70, ax=axes[2],
         )
         axes[2].axhline(0.05, color="black", linestyle="--")
         axes[2].set_title("(C) ΔMean vs p-value", fontweight="bold")
@@ -607,20 +607,6 @@ class LLMGoodEnough:
 
         plt.tight_layout()
 
-        # --- optional summary annotations ---
-        if include_annotations:
-            summary = results.groupby("model")["p_value"].agg(
-                median_pval="median",
-                fraction_significant=lambda x: (x < 0.05).mean()
-            )
-            y_pos = -0.18
-            for idx, (model, row) in enumerate(summary.iterrows()):
-                fig.text(
-                    0.17 + idx * 0.28, y_pos,
-                    f"{model}: median p = {row['median_pval']:.3f}, "
-                    f"{row['fraction_significant']*100:.1f}% < 0.05",
-                    ha="center", fontsize=11.5
-                )
 
         # --- save figure if requested ---
         if save_path:
