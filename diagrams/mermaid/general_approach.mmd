@@ -1,0 +1,20 @@
+flowchart TD
+    A[***Input Data***:<br/>Human Scores & LLM Scores] --> B[***Step 1***:<br/>Compute Inter-Human<br/>Disagreement<br/>Pairwise absolute differences]
+    A --> C[***Step 2***:<br/>Compute<br/>Human-LLM Disagreement<br/>Absolute differences]
+    A --> D[***Step 4***:<br/>Establish<br/>Random Baseline<br/>Uniform random scores]
+    
+    B --> E[Distribution of<br/>Human-Human Disagreements]
+    C --> F[Distribution of<br/>Human-LLM Disagreements]
+    D --> G[Distribution of<br/>Random-Human Disagreements]
+    
+    E --> H[***Step 3***:<br/>Statistical Comparison<br/>Mann-Whitney U Test]
+    F --> H
+    G --> H
+    
+    H --> I{***Is p-value ≥ 0.05?***}
+    I -->|***Yes***| J[LLM is ***'Good Enough'***<br/>Within human variability]
+    I -->|***No***| K[LLM is **NOT** ***'Good Enough'***<br/>Significantly diverges<br/>from humans]
+    
+    style J fill:#90EE90
+    style K fill:#FFB6C1
+    style H fill:#87CEEB
