@@ -9,9 +9,11 @@
 
 > ***`Paper accessible at the following link:`*** xxxxxxxx.xx
 
-## ***`General Approach — Is the LLM “Good Enough”?`***
+## ***`General Approach — Is the LLM "Good Enough"?`***
 
-The goal is to test whether a language model’s judgments align with human-level variability — that is, whether it behaves like *another human judge* rather than a random or systematically biased rater.
+The goal is to test whether a language model's judgments align with human-level variability — that is, whether it behaves like *another human judge* rather than a random or systematically biased rater.
+
+![General Approach](diagrams/svg/general_approach.svg)
 
 #### 1. **Measure Inter-Human Disagreement**
 For each task or item, multiple human raters provide scores.  
