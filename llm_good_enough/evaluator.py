@@ -549,14 +549,18 @@ class LLMGoodEnough:
         """
         results = []
 
+        # NOTE:
+        # This is computed once and reused for each iteration to avoid recomputing it multiple times.
+        # >>> only judges vary across iterations!
+        human_dis = self.compute_human_disagreements()
+        llm_dis = self.compute_llm_human_disagreements(llm_col)
+
         # --- Monte Carlo simulation ---
         for _ in range(iterations):
             # reseed + refresh the random judge in-place
             self.reseed_and_refresh()
 
-            # compute all disagreements
-            human_dis = self.compute_human_disagreements()
-            llm_dis = self.compute_llm_human_disagreements(llm_col)
+            # compute random judge disagreements
             rand_dis = self.compute_llm_human_disagreements("RANDOM_as_a_judge")
 
             # collect stats
