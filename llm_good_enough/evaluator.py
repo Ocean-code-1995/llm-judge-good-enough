@@ -1033,10 +1033,10 @@ class LLMGoodEnough:
 
         plt.show()
 
-    
+
     def plot_human_stability_analysis(
         self,
-        percentages: list[int] = [10, 20, 30, 40, 50, 60],
+        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
         iterations: int = 1000,
         stability_threshold: float = 0.01,
         save_path: str | None = None
