@@ -650,7 +650,7 @@ class LLMGoodEnough:
         half = len(arr) // 2
         return arr[:half], arr[half:]
 
-    def _plot_monte_carlo_panels(
+    def _render_robustness_panels(
         self,
         df_mc: pd.DataFrame,
         human_dis: np.ndarray,
@@ -658,7 +658,7 @@ class LLMGoodEnough:
         iterations: int,
     ):
         """
-        Render Panels A, B, C in a single figure.
+        Internal rendering engine for single-LLM robustness figure (Panels A, B, C).
         """
         import seaborn as sns
         import matplotlib.pyplot as plt
@@ -726,6 +726,101 @@ class LLMGoodEnough:
         plt.tight_layout()
         return fig
 
+    def _render_robustness_panels_multi_llm(
+        self,
+        df_mc: pd.DataFrame,
+        human_dis: np.ndarray,
+        llm_results: dict[str, dict],
+        iterations: int,
+    ):
+        """
+        Internal rendering engine for multi-LLM robustness figure (Panels A, B, C).
+        
+        Parameters
+        ----------
+        df_mc : pd.DataFrame
+            Monte Carlo simulation results with columns 'delta_mean' and 'p_value'.
+        human_dis : np.ndarray
+            Human-human disagreement array.
+        llm_results : dict
+            Dictionary mapping LLM names to their results:
+            {name: {"delta": float, "p_value": float}}
+        iterations : int
+            Number of Monte Carlo iterations (for title).
+        """
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+
+        sns.set_theme(style="whitegrid", font_scale=1.2)
+        fig, axes = plt.subplots(1, 3, figsize=(22, 6))
+
+        # ----- Panel A: p-Value Convergence -----
+        pA, pB = self._split_half(df_mc["p_value"].values)
+        sns.kdeplot(pA, fill=True, ax=axes[0], label="First half", alpha=0.5, color="royalblue")
+        sns.kdeplot(pB, fill=True, ax=axes[0], label="Second half", alpha=0.5, color="#333333")
+        axes[0].axvline(0.05, linestyle="--", color="black")
+        axes[0].set_title(
+            "Panel A: Convergence Diagnostics\nMonte Carlo p-Value Distribution",
+            fontweight="bold",
+            fontsize=18,
+        )
+        axes[0].set_xlabel("p-Value", fontsize=14, fontweight="bold")
+        axes[0].set_ylabel("Density", fontsize=14, fontweight="bold")
+        axes[0].legend()
+
+        # ----- Panel B: Δ Mean Convergence -----
+        dA, dB = self._split_half(df_mc["delta_mean"].values)
+        sns.kdeplot(dA, fill=True, ax=axes[1], label="First half", alpha=0.5, color="royalblue")
+        sns.kdeplot(dB, fill=True, ax=axes[1], label="Second half", alpha=0.5, color="#333333")
+        axes[1].axvline(0, linestyle="-.", color="black")
+        axes[1].set_title(
+            "Panel B: Convergence Diagnostics\nMonte Carlo Δ Mean Disagreement",
+            fontweight="bold",
+            fontsize=18,
+        )
+        axes[1].set_xlabel("Δ Mean Disagreement", fontsize=14, fontweight="bold")
+        axes[1].set_ylabel("Density", fontsize=14, fontweight="bold")
+        axes[1].legend()
+
+        # ----- Panel C: Monte Carlo Cloud + Multiple LLMs -----
+        sns.scatterplot(
+            data=df_mc, x="delta_mean", y="p_value",
+            alpha=0.3, s=100, color="orangered", ax=axes[2],
+            label="Random judges"
+        )
+
+        # Color palette for multiple LLMs
+        llm_colors = ["#2ecc71", "#3498db", "#9b59b6", "#e74c3c", "#f39c12", "#1abc9c"]
+        llm_markers = ["X", "o", "s", "D", "^", "v"]
+
+        for idx, (llm_name, results) in enumerate(llm_results.items()):
+            color = llm_colors[idx % len(llm_colors)]
+            marker = llm_markers[idx % len(llm_markers)]
+            
+            axes[2].scatter(
+                results["delta"], results["p_value"],
+                color=color, edgecolor="black",
+                s=180, marker=marker, linewidth=1.5,
+                label=llm_name, zorder=10
+            )
+
+        axes[2].axhline(0.05, linestyle="--", color="black")
+        axes[2].axvline(0, linestyle="-.", color="gray")
+        
+        n_llms = len(llm_results)
+        title_suffix = "LLMs" if n_llms > 1 else "LLM"
+        axes[2].set_title(
+            f"Panel C: Δ Mean vs p-Value\nMonte Carlo Cloud ({iterations:,} samples) vs {n_llms} {title_suffix}",
+            fontweight="bold",
+            fontsize=18,
+        )
+        axes[2].set_xlabel("Δ Mean", fontsize=14, fontweight="bold")
+        axes[2].set_ylabel("p-Value", fontsize=14, fontweight="bold")
+        axes[2].legend(loc="upper right")
+
+        plt.tight_layout()
+        return fig
+
 
 
     def plot_monte_carlo_robustness(
@@ -775,7 +870,7 @@ class LLMGoodEnough:
             human_dis=human_dis,
         )
 
-        fig = self._plot_monte_carlo_panels(
+        fig = self._render_robustness_panels(
             df_mc=df_mc,
             human_dis=human_dis,
             llm_dis=llm_dis,
@@ -784,5 +879,111 @@ class LLMGoodEnough:
 
         if save_path:
             fig.savefig(save_path, dpi=300, bbox_inches="tight")
+
+        plt.show()
+
+    def plot_monte_carlo_robustness_multi(
+        self,
+        llm_cols: list[str] | None = None,
+        iterations: int = 25_000,
+        save_path: str | None = None,
+    ) -> None:
+        """
+        Run Monte-Carlo robustness analysis comparing multiple LLMs simultaneously.
+
+        This method generates a single 3-panel figure where:
+        
+        • Panel A — Stability of p-value distributions across Monte-Carlo splits  
+        • Panel B — Stability of Δ-mean disagreement across Monte-Carlo splits  
+        • Panel C — Joint Δ-mean vs p-value scatter with ALL specified LLMs plotted
+        
+        This is more efficient than calling `plot_monte_carlo_robustness` in a loop
+        because the Monte Carlo simulation only runs once, and all LLMs are compared
+        in a single Panel C visualization.
+
+        Parameters
+        ----------
+        llm_cols : list of str, optional
+            Names of the LLM judge columns to evaluate. If None, uses all LLM columns
+            provided during initialization (self.llm_cols).
+        iterations : int, default=25_000
+            Number of Monte-Carlo samples (random judges) to generate.
+        save_path : str or None
+            Optional file path to save the resulting 3-panel figure.
+
+        Example
+        -------
+        ```python
+        # Instead of looping:
+        # for model in ['GPT', 'LLAMA', 'MISTRAL']:
+        #     evaluator.plot_monte_carlo_robustness(f"{model}_relevance_as_a_judge")
+        
+        # Use this single call:
+        evaluator.plot_monte_carlo_robustness_multi(
+            llm_cols=['GPT_relevance_as_a_judge', 'LLAMA_relevance_as_a_judge', 'MISTRAL_relevance_as_a_judge'],
+            iterations=33_000
+        )
+        ```
+        """
+        # Default to all LLM columns if none specified
+        if llm_cols is None:
+            llm_cols = self.llm_cols
+        
+        if not llm_cols:
+            raise ValueError("❌ No LLM columns specified and no default llm_cols available.")
+
+        # Validate all columns exist
+        missing = [col for col in llm_cols if col not in self.df.columns]
+        if missing:
+            raise ValueError(f"❌ LLM columns not found in DataFrame: {missing}")
+
+        if self.verbosity > 0:
+            print(f"📊 Running Monte Carlo robustness analysis for {len(llm_cols)} LLMs...")
+            for col in llm_cols:
+                print(f"   • {col}")
+
+        # Compute human disagreements (once)
+        human_dis = self.compute_human_disagreements()
+
+        # Run Monte Carlo simulation (once)
+        df_mc = self._monte_carlo_random_judges(
+            iterations=iterations,
+            min_score=self.min_score,
+            max_score=self.max_score,
+            human_dis=human_dis,
+        )
+
+        # Compute results for each LLM
+        llm_results = {}
+        for llm_col in llm_cols:
+            llm_dis = self.compute_llm_human_disagreements(llm_col)
+            delta = np.mean(llm_dis) - np.mean(human_dis)
+            p_val = mannwhitneyu(llm_dis, human_dis, alternative="greater").pvalue
+            
+            # Extract a clean display name from column name
+            # e.g., "GPT_relevance_as_a_judge" -> "GPT"
+            display_name = llm_col.split("_")[0] if "_" in llm_col else llm_col
+            
+            llm_results[display_name] = {
+                "delta": delta,
+                "p_value": p_val,
+                "col": llm_col,
+            }
+            
+            if self.verbosity > 0:
+                print(f"   ✓ {display_name}: Δ={delta:.4f}, p={p_val:.4f}")
+
+        # Plot all LLMs in single figure
+        fig = self._render_robustness_panels_multi_llm(
+            df_mc=df_mc,
+            human_dis=human_dis,
+            llm_results=llm_results,
+            iterations=iterations,
+        )
+
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            if self.verbosity > 0:
+                print(f"✅ Figure saved → {save_path}")
 
         plt.show()
