@@ -1032,3 +1032,115 @@ class LLMGoodEnough:
                 print(f"✅ Figure saved → {save_path}")
 
         plt.show()
+
+    
+    def plot_human_stability_analysis(
+        self,
+        percentages: list[int] = [10, 20, 30, 40, 50, 60],
+        iterations: int = 1000,
+        stability_threshold: float = 0.01,
+        save_path: str | None = None
+    ) -> None:
+        """
+        Stability test using the RANDOM judge instead of a random human.
+
+        For each percentage p:
+            1) Bootstrap-sample rows.
+            2) Compute human–human disagreements.
+            3) Compute random-judge–human disagreements from RANDOM_as_a_judge.
+            4) Run MWU (p > 0.05 = accepted).
+            5) Check stability of acceptance decisions.
+        """
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from scipy.stats import mannwhitneyu
+        import pandas as pd
+
+        human_cols = self.human_cols
+        rand_col = "RANDOM_as_a_judge"
+        df = self.df.reset_index(drop=True)
+
+        results = []  # (percentage, mean_acceptance, stable_flag)
+
+        for p in percentages:
+            n_rows = max(1, int(len(df) * (p / 100)))
+            decisions = []
+
+            for _ in range(iterations):
+                # --- 1) Bootstrap subsample rows ---
+                sample = df.sample(n_rows, replace=True)
+
+                # --- 2) Compute human–human disagreements ---
+                human_dis = []
+                for _, row in sample[human_cols].iterrows():
+                    vals = row.dropna().to_numpy()
+                    if len(vals) >= 2:
+                        diffs = np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
+                        human_dis.extend(diffs)
+
+                human_dis = np.array(human_dis)
+                if len(human_dis) == 0:
+                    continue
+
+                # --- 3) Random-judge–human disagreements ---
+                pseudo_vals = sample[rand_col].to_numpy()
+                human_matrix = sample[human_cols].to_numpy()
+
+                # mask rows where random judge is NaN (unlikely)
+                mask = ~np.isnan(pseudo_vals)
+                pseudo_vals = pseudo_vals[mask]
+                human_sub = human_matrix[mask]
+
+                pseudo_dis = []
+                for pj, row_vals in zip(pseudo_vals, human_sub):
+                    row_vals = row_vals[~np.isnan(row_vals)]
+                    if len(row_vals) > 0:
+                        pseudo_dis.extend(np.abs(row_vals - pj))
+
+                pseudo_dis = np.array(pseudo_dis)
+                if len(pseudo_dis) == 0:
+                    continue
+
+                # --- 4) MWU test ---
+                p_val = mannwhitneyu(
+                    pseudo_dis, human_dis, alternative="greater"
+                ).pvalue
+
+                decisions.append(1 if p_val > 0.05 else 0)
+
+            # --- 5) Handle empty decisions ---
+            if len(decisions) == 0:
+                results.append((p, np.nan, False))
+                continue
+
+            # --- 6) Stability check ---
+            decisions = np.array(decisions)
+            half = len(decisions) // 2
+            mean_A = decisions[:half].mean()
+            mean_B = decisions[half:].mean()
+            stable = abs(mean_A - mean_B) < stability_threshold
+
+            results.append((p, decisions.mean(), stable))
+
+        # --- Plotting ---
+        perc, acc, st = zip(*results)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(perc, acc, marker="o", linewidth=2)
+
+        for p, a, s in results:
+            color = "green" if s else "red"
+            plt.scatter(p, a, color=color, s=120)
+
+        plt.axhline(0.5, linestyle="--", color="gray", alpha=0.6)
+        plt.title("Human Stability Test Using Random Judge", fontsize=18, fontweight="bold")
+        plt.xlabel("Percentage of Data Sampled", fontsize=14)
+        plt.ylabel("Acceptance Rate (p > 0.05)", fontsize=14)
+        plt.ylim(0, 1)
+        plt.grid(alpha=0.3)
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+        plt.show()
