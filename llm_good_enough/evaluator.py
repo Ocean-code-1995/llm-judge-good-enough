@@ -367,6 +367,35 @@ class LLMGoodEnough:
         print(f"Mann–Whitney p-value: {p_val:.4f}")
 
     # ~~~~~~~~~~~~~~~ INTERNAL HELPER METHODS (PRIVATE) ~~~~~~~~~~~~~~~
+    @staticmethod
+    def _clean_model_name(name: str) -> str:
+        """
+        Extract a clean display name from a column name.
+        
+        Examples:
+            "GPT_relevance_as_a_judge" -> "GPT"
+            "LLAMA_as_a_judge" -> "LLAMA"
+            "GPT-4o-mini_coherence_as_a_judge" -> "GPT-4o-mini"
+            "Random Judge" -> "Random Judge"
+        """
+        # Keep special names as-is
+        if name in ("Random Judge", "RANDOM_as_a_judge"):
+            return "Random Judge"
+        
+        # Remove "_as_a_judge" suffix and extract model name (first part before metric)
+        name = name.replace("_as_a_judge", "")
+        
+        # If there's still an underscore, take the first part (model name)
+        # But be careful with model names like "GPT-4o-mini" that don't have underscores
+        parts = name.split("_")
+        if len(parts) > 1:
+            # Check if second part looks like a metric name
+            metrics = {"informativeness", "relevance", "fluency", "coherence", "quality", "accuracy"}
+            if parts[-1].lower() in metrics:
+                return "_".join(parts[:-1])
+        
+        return parts[0] if parts else name
+
     def _save_figure(self, save_path: str, check_verbosity: bool = False) -> None:
         """
         Helper method to save a matplotlib figure with automatic format detection.
@@ -442,7 +471,10 @@ class LLMGoodEnough:
 
         categories = np.arange(len(bins) - 1)
 
-        for ax, (name, data) in zip(axes, model_disagreement_dict.items()):
+        for ax, (raw_name, data) in zip(axes, model_disagreement_dict.items()):
+            # Clean up model name for display
+            display_name = self._clean_model_name(raw_name)
+            
             mean_model = round(np.mean(data), 2)
             std_model = round(np.std(data), 2)
             mean_human = round(np.mean(human_human_disagreements), 2)
@@ -475,7 +507,7 @@ class LLMGoodEnough:
             legend.get_title().set_fontweight('bold')
             legend.get_title().set_fontsize(13.5)
 
-            ax.set_title(name, fontweight='bold', fontsize=20)
+            ax.set_title(display_name, fontweight='bold', fontsize=20)
             ax.set_xlabel('Degree of Disagreement', fontsize=13.5)
             ax.set_ylabel('Probability', fontsize=13.5)
             ax.set_xticks(categories)
@@ -497,8 +529,9 @@ class LLMGoodEnough:
     def plot_judges_grid(
         self,
         y_lim: float = 0.6,
-        save_path: str = None,
         bar_width: float = 0.35,
+        bins: np.ndarray = None,
+        save_path: str = None,
     ) -> None:
         """
         Public API method.
@@ -509,6 +542,18 @@ class LLMGoodEnough:
         - computes each LLM's disagreements
         - adds Random Judge baseline
         - delegates rendering to the internal grid plotter
+
+        Parameters
+        ----------
+        y_lim : float, default=0.6
+            Upper limit of the y-axis (probability).
+        save_path : str, optional
+            Path to save the figure. Format inferred from extension.
+        bar_width : float, default=0.35
+            Width of the histogram bars.
+        bins : np.ndarray, optional
+            Custom bins for the histogram. If None, bins are inferred from 
+            the score range (0 to max_possible_disagreement + 1).
         """
 
         human_disagreements = self.compute_human_disagreements()
@@ -523,6 +568,7 @@ class LLMGoodEnough:
             human_human_disagreements=human_disagreements,
             y_lim=y_lim,
             bar_width=bar_width,
+            bins=bins,
             save_path=save_path,
         )
 
@@ -961,8 +1007,7 @@ class LLMGoodEnough:
             p_val = mannwhitneyu(llm_dis, human_dis, alternative="greater").pvalue
             
             # Extract a clean display name from column name
-            # e.g., "GPT_relevance_as_a_judge" -> "GPT"
-            display_name = llm_col.split("_")[0] if "_" in llm_col else llm_col
+            display_name = self._clean_model_name(llm_col)
             
             llm_results[display_name] = {
                 "delta": delta,
