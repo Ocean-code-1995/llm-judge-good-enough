@@ -307,7 +307,12 @@ For each percentage of sampled data (5%, 10%, …, 100%):
 | **Uphill** | Suspicious — investigate data quality. |
 | **Erratic** (many red) | High variance — may need more data or iterations. |
 
-> **Key insight:** A downhill trend that converges indicates humans produce a consistent, non-random signal that emerges with sufficient sample size — validating the dataset as ground truth.
+> **Key insight:** A **converging downtrend** confirms three things:
+> 1. ✅ **Enough data** — the statistical test gains power with larger samples
+> 2. ✅ **Reliable humans** — annotators share a consistent judgment pattern (not random noise)
+> 3. ✅ **Valid baseline** — the dataset is suitable for benchmarking LLM judges
+>
+> If humans were just noise (like the random judge), acceptance would stay flat and high (~1.0) regardless of sample size — because you can never distinguish noise from noise.
 
 ---
 
