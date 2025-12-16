@@ -1037,56 +1037,101 @@ class LLMGoodEnough:
     def plot_human_stability_analysis(
         self,
         percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-        iterations: int = 1000,
-        stability_threshold: float = 0.01,
-        save_path: str | None = None
+        min_iterations: int = 200,
+        max_iterations: int = 10000,
+        check_interval: int = 100,
+        convergence_threshold: float = 0.01,
+        save_path: str | None = None,
+        show_iteration_counts: bool = True,
     ) -> None:
         """
-        Stability test using the RANDOM judge instead of a random human.
+        Test how stable acceptance rates are across different sample sizes.
+        
+        Uses **adaptive sampling**: iterates until the acceptance rate converges 
+        (split-half difference < threshold) rather than fixed iteration counts.
+        This is statistically sound because smaller samples (noisier) automatically
+        get more iterations, while larger samples stop early once stable.
 
-        **How the algorithm works:**
-        ----------------------------
-            1. For each percentage p:
-                1) Bootstrap-sample rows.
-                2) Compute human–human disagreements.
-                3) Compute random-judge–human disagreements from `RANDOM_as_a_judge`.
-                4) Run MWU (p > 0.05 = accepted).
-                5) Check stability of acceptance decisions.
-                
-            2. Plot the results.
+        Reasoning:
+        ---------
+           - Smaller sample percentages (e.g., 5%) are inherently noisier and may need more iterations to stabilize.
+           - Larger percentages converge faster, so we're wasting compute with fixed iterations
+           - Showing iteration counts provides insight into the "difficulty" of each sample size
+
+        **Algorithm:**
+            For each percentage p:
+            1. Bootstrap-sample p% of rows
+            2. Compute human–human and random-judge–human disagreements
+            3. Run MWU test (accepted if p > 0.05)
+            4. Repeat until split-half acceptance rates converge or max_iterations
+        
+        **Acceptance rate** 
+           = number of times the random judge is accepted as human-like / total number of iterations
+        
+        **Plot shows:**
+            - X-axis: sample percentage, Y-axis: acceptance rate
+            - Green scatter = converged, Red = max iterations reached
+            - Annotations show iteration counts (reveals "difficulty" per sample size)
+
+        **Interpretation:**
+            The MWU test gains statistical power as sample size increases.
+            - Small samples (5-10%): High acceptance rate → not enough power to detect 
+              that random is worse than humans (Type II error / false negative).
+            - Large samples (50-100%): Low acceptance rate → sufficient power to 
+              reliably reject the random judge as non-human-like.
+            
+            This is a sanity check: a random judge *should* be rejected with enough 
+            data. The downhill trend confirms the methodology is working correctly.
+        
+        **Trend patterns:**
+            - Downhill → expected for random/bad judges. Power increases, rejection reliable.
+            - Flat high (~1.0) → judge is consistently human-like across all sample sizes (good judge).
+            - Flat low (~0.0) → judge is clearly bad, rejected even with tiny samples.
+            - Uphill → suspicious, investigate data quality or methodology.
+            - Erratic (many red points) → high variance, may need more data.
 
         Parameters
         ----------
-        percentages : list of int, default=[5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        percentages : list of int
             Percentages of data to sample.
-        iterations : int, default=1000
-            Number of iterations to run.
-        stability_threshold : float, default=0.01
-            Stability threshold for the acceptance rate.
-        save_path : str or None, default=None
+        min_iterations : int
+            Minimum iterations before checking convergence.
+        max_iterations : int
+            Hard cap to prevent infinite loops.
+        check_interval : int
+            Check convergence every N iterations (after min_iterations).
+        convergence_threshold : float
+            Stop when split-half difference in acceptance rate is below this.
+        save_path : str or None
             Path to save the figure.
-
-        Returns
-        -------
-        None
+        show_iteration_counts : bool
+            Annotate iteration counts above each scatter point.
         """
 
         import matplotlib.pyplot as plt
         import numpy as np
         from scipy.stats import mannwhitneyu
-        import pandas as pd
+
+        # Reseed for reproducibility across repeated calls
+        self._set_global_seed(self.seed)
 
         human_cols = self.human_cols
         rand_col = "RANDOM_as_a_judge"
         df = self.df.reset_index(drop=True)
 
-        results = []  # (percentage, mean_acceptance, stable_flag)
+        # results: (percentage, mean_acceptance, converged_flag, n_iterations)
+        results = []
 
         for p in percentages:
             n_rows = max(1, int(len(df) * (p / 100)))
             decisions = []
+            converged = False
+            iteration_count = 0
 
-            for _ in range(iterations):
+            if self.verbosity > 0:
+                print(f"📊 Sampling {p}% of data ({n_rows} rows)...", end=" ")
+
+            while iteration_count < max_iterations:
                 # --- 1) Bootstrap subsample rows ---
                 sample = df.sample(n_rows, replace=True)
 
@@ -1100,6 +1145,7 @@ class LLMGoodEnough:
 
                 human_dis = np.array(human_dis)
                 if len(human_dis) == 0:
+                    iteration_count += 1
                     continue
 
                 # --- 3) Random-judge–human disagreements ---
@@ -1119,6 +1165,7 @@ class LLMGoodEnough:
 
                 pseudo_dis = np.array(pseudo_dis)
                 if len(pseudo_dis) == 0:
+                    iteration_count += 1
                     continue
 
                 # --- 4) MWU test ---
@@ -1127,39 +1174,339 @@ class LLMGoodEnough:
                 ).pvalue
 
                 decisions.append(1 if p_val > 0.05 else 0)
+                iteration_count += 1
 
-            # --- 5) Handle empty decisions ---
+                # --- 5) Check convergence periodically ---
+                if (iteration_count >= min_iterations and 
+                    iteration_count % check_interval == 0 and 
+                    len(decisions) >= min_iterations):
+                    
+                    decisions_arr = np.array(decisions)
+                    half = len(decisions_arr) // 2
+                    mean_A = decisions_arr[:half].mean()
+                    mean_B = decisions_arr[half:].mean()
+                    
+                    if abs(mean_A - mean_B) < convergence_threshold:
+                        converged = True
+                        break
+
+            # --- 6) Handle empty decisions ---
             if len(decisions) == 0:
-                results.append((p, np.nan, False))
+                results.append((p, np.nan, False, iteration_count))
+                if self.verbosity > 0:
+                    print(f"⚠️ No valid iterations")
                 continue
 
-            # --- 6) Stability check ---
-            decisions = np.array(decisions)
-            half = len(decisions) // 2
-            mean_A = decisions[:half].mean()
-            mean_B = decisions[half:].mean()
-            stable = abs(mean_A - mean_B) < stability_threshold
-
-            results.append((p, decisions.mean(), stable))
+            mean_acceptance = np.mean(decisions)
+            results.append((p, mean_acceptance, converged, iteration_count))
+            
+            if self.verbosity > 0:
+                status = "✓ converged" if converged else "⚠ max reached"
+                print(f"{status} at {iteration_count:,} iterations (acceptance: {mean_acceptance:.3f})")
 
         # --- Plotting ---
-        perc, acc, st = zip(*results)
+        perc, acc, conv, iters = zip(*results)
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(perc, acc, marker="o", linewidth=2)
+        fig, ax = plt.subplots(figsize=(12, 7))
+        ax.plot(perc, acc, marker="o", linewidth=2, zorder=1)
 
-        for p, a, s in results:
-            color = "green" if s else "red"
-            plt.scatter(p, a, color=color, s=120)
+        for p, a, c, n_iter in results:
+            color = "green" if c else "red"
+            ax.scatter(p, a, color=color, s=120, zorder=2, edgecolor="black", linewidth=0.5)
+            
+            # Annotate iteration count above each point
+            if show_iteration_counts and not np.isnan(a):
+                ax.annotate(
+                    f"{n_iter:,}",
+                    xy=(p, a),
+                    xytext=(0, 12),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=12,
+                    color="dimgray",
+                    fontweight="bold",
+                )
 
-        plt.axhline(0.5, linestyle="--", color="gray", alpha=0.6)
-        plt.title("Human Stability Test Using Random Judge", fontsize=18, fontweight="bold")
-        plt.xlabel("Percentage of Data Sampled", fontsize=14)
-        plt.ylabel("Acceptance Rate (p > 0.05)", fontsize=14)
-        plt.ylim(0, 1)
-        plt.grid(alpha=0.3)
+        ax.axhline(0.5, linestyle="--", color="gray", alpha=0.6)
+        
+        # Add legend for convergence status
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
+                   markersize=10, markeredgecolor='black', label='Converged'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+                   markersize=10, markeredgecolor='black', label='Max iterations reached'),
+        ]
+        ax.legend(handles=legend_elements, loc='lower right', fontsize=11)
+        
+        ax.set_title(
+            "Human Stability Test Using Random Judge\n(Adaptive Sampling Until Convergence)",
+            fontsize=18, fontweight="bold"
+        )
+        ax.set_xlabel("Percentage of Data Sampled", fontsize=14)
+        ax.set_ylabel("Acceptance Rate (p > 0.05)", fontsize=14)
+        ax.set_ylim(0, 1.1)  # Extra space for annotations
+        ax.set_xlim(min(perc) - 3, max(perc) + 3)
+        ax.grid(alpha=0.3)
+
+        plt.tight_layout()
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            if self.verbosity > 0:
+                print(f"✅ Figure saved → {save_path}")
 
         plt.show()
+
+
+    def _run_stability_single_seed(
+        self,
+        seed: int,
+        percentages: list[int],
+        min_iterations: int,
+        max_iterations: int,
+        check_interval: int,
+        convergence_threshold: float,
+    ) -> dict:
+        """
+        Internal: Run stability analysis for a single seed without plotting.
+        Returns dict mapping percentage -> (acceptance_rate, converged, n_iterations).
+        """
+        from scipy.stats import mannwhitneyu
+        
+        # Set seed
+        self._set_global_seed(seed)
+        
+        human_cols = self.human_cols
+        rand_col = "RANDOM_as_a_judge"
+        df = self.df.reset_index(drop=True)
+        
+        results = {}
+        
+        for p in percentages:
+            n_rows = max(1, int(len(df) * (p / 100)))
+            decisions = []
+            converged = False
+            iteration_count = 0
+            
+            while iteration_count < max_iterations:
+                sample = df.sample(n_rows, replace=True)
+                
+                # Compute human-human disagreements
+                human_dis = []
+                for _, row in sample[human_cols].iterrows():
+                    vals = row.dropna().to_numpy()
+                    if len(vals) >= 2:
+                        diffs = np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
+                        human_dis.extend(diffs)
+                
+                human_dis = np.array(human_dis)
+                if len(human_dis) == 0:
+                    iteration_count += 1
+                    continue
+                
+                # Random-judge-human disagreements
+                pseudo_vals = sample[rand_col].to_numpy()
+                human_matrix = sample[human_cols].to_numpy()
+                mask = ~np.isnan(pseudo_vals)
+                pseudo_vals = pseudo_vals[mask]
+                human_sub = human_matrix[mask]
+                
+                pseudo_dis = []
+                for pj, row_vals in zip(pseudo_vals, human_sub):
+                    row_vals = row_vals[~np.isnan(row_vals)]
+                    if len(row_vals) > 0:
+                        pseudo_dis.extend(np.abs(row_vals - pj))
+                
+                pseudo_dis = np.array(pseudo_dis)
+                if len(pseudo_dis) == 0:
+                    iteration_count += 1
+                    continue
+                
+                p_val = mannwhitneyu(pseudo_dis, human_dis, alternative="greater").pvalue
+                decisions.append(1 if p_val > 0.05 else 0)
+                iteration_count += 1
+                
+                # Check convergence
+                if (iteration_count >= min_iterations and 
+                    iteration_count % check_interval == 0 and 
+                    len(decisions) >= min_iterations):
+                    
+                    decisions_arr = np.array(decisions)
+                    half = len(decisions_arr) // 2
+                    mean_A = decisions_arr[:half].mean()
+                    mean_B = decisions_arr[half:].mean()
+                    
+                    if abs(mean_A - mean_B) < convergence_threshold:
+                        converged = True
+                        break
+            
+            if len(decisions) > 0:
+                results[p] = (np.mean(decisions), converged, iteration_count)
+            else:
+                results[p] = (np.nan, False, iteration_count)
+        
+        return results
+
+
+    def plot_human_stability_seed_robustness(
+        self,
+        n_seeds: int = 20,
+        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+        min_iterations: int = 200,
+        max_iterations: int = 5000,
+        check_interval: int = 100,
+        convergence_threshold: float = 0.01,
+        confidence_level: float = 0.95,
+        save_path: str | None = None,
+    ) -> None:
+        """
+        Seed sensitivity analysis: run stability test across multiple seeds.
+        
+        Shows how robust the acceptance rate estimates are to random initialization.
+        Plots mean acceptance rate with confidence intervals across seeds.
+
+        **Interpretation:**
+            - Tight CI bands → conclusions are robust across seeds, does not depend on the random seed
+            - Wide CI bands → results are sensitive to random initialization
+            - If the downhill trend is consistent across seeds → methodology is reliable
+
+        Parameters
+        ----------
+        n_seeds : int
+            Number of different seeds to test.
+        percentages : list of int
+            Percentages of data to sample.
+        min_iterations : int
+            Minimum iterations before checking convergence (per seed).
+        max_iterations : int
+            Maximum iterations per seed (lower than single-seed analysis for speed).
+        check_interval : int
+            Check convergence every N iterations.
+        convergence_threshold : float
+            Convergence threshold for split-half difference.
+        confidence_level : float
+            Confidence level for CI bands (default 95%).
+        save_path : str or None
+            Path to save the figure.
+        """
+        import matplotlib.pyplot as plt
+        from scipy import stats
+        
+        if self.verbosity > 0:
+            print(f"🔄 Running seed sensitivity analysis with {n_seeds} seeds...")
+        
+        # Generate random seeds (convert to Python int for random.seed compatibility)
+        rng = np.random.default_rng(self.seed)
+        seeds = [int(s) for s in rng.integers(0, 2**31, size=n_seeds)]
+        
+        # Collect results across seeds
+        all_results = {p: [] for p in percentages}
+        convergence_rates = {p: 0 for p in percentages}
+        
+        for i, seed in enumerate(seeds):
+            if self.verbosity > 0:
+                print(f"  Seed {i+1}/{n_seeds} ({seed})...", end=" ")
+            
+            result = self._run_stability_single_seed(
+                seed=seed,
+                percentages=percentages,
+                min_iterations=min_iterations,
+                max_iterations=max_iterations,
+                check_interval=check_interval,
+                convergence_threshold=convergence_threshold,
+            )
+            
+            for p in percentages:
+                acc, conv, n_iter = result[p]
+                if not np.isnan(acc):
+                    all_results[p].append(acc)
+                    if conv:
+                        convergence_rates[p] += 1
+            
+            if self.verbosity > 0:
+                print("done")
+        
+        # Compute statistics
+        means = []
+        ci_lows = []
+        ci_highs = []
+        
+        for p in percentages:
+            values = np.array(all_results[p])
+            if len(values) > 1:
+                mean = np.mean(values)
+                sem = stats.sem(values)
+                # Handle edge case: SEM = 0 (all values identical) → CI collapses to mean
+                if sem > 0:
+                    ci = stats.t.interval(confidence_level, len(values)-1, loc=mean, scale=sem)
+                    ci_lows.append(ci[0])
+                    ci_highs.append(ci[1])
+                else:
+                    ci_lows.append(mean)
+                    ci_highs.append(mean)
+                means.append(mean)
+            else:
+                means.append(np.nan)
+                ci_lows.append(np.nan)
+                ci_highs.append(np.nan)
+        
+        # Plot
+        fig, ax = plt.subplots(figsize=(12, 7))
+        
+        # CI band
+        ax.fill_between(
+            percentages, ci_lows, ci_highs,
+            alpha=0.3, color='steelblue', label=f'{int(confidence_level*100)}% CI across {n_seeds} seeds'
+        )
+        
+        # Mean line
+        ax.plot(percentages, means, 'o-', color='steelblue', linewidth=2, markersize=8, label='Mean acceptance rate')
+        
+        # Annotate convergence rate
+        for p, mean, conv_count in zip(percentages, means, [convergence_rates[p] for p in percentages]):
+            if not np.isnan(mean):
+                conv_pct = conv_count / n_seeds * 100
+                ax.annotate(
+                    f'{conv_pct:.0f}%',
+                    xy=(p, mean),
+                    xytext=(0, 15),
+                    textcoords='offset points',
+                    ha='center',
+                    fontsize=9,
+                    color='darkgreen' if conv_pct > 80 else 'darkorange',
+                    fontweight='bold',
+                )
+        
+        ax.axhline(0.5, linestyle='--', color='gray', alpha=0.6)
+        ax.set_title(
+            f"Seed Sensitivity Analysis\n(Mean ± {int(confidence_level*100)}% CI across {n_seeds} seeds)",
+            fontsize=18, fontweight='bold'
+        )
+        ax.set_xlabel("Percentage of Data Sampled", fontsize=14)
+        ax.set_ylabel("Acceptance Rate", fontsize=14)
+        ax.set_ylim(-0.05, 1.15)
+        ax.set_xlim(min(percentages) - 3, max(percentages) + 3)
+        ax.legend(loc='upper right', fontsize=11)
+        ax.grid(alpha=0.3)
+        
+        # Add note about annotations
+        ax.text(
+            0.02, 0.02,
+            "Annotations = % of seeds that converged",
+            transform=ax.transAxes,
+            fontsize=10, color='gray', style='italic'
+        )
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            if self.verbosity > 0:
+                print(f"✅ Figure saved → {save_path}")
+        
+        plt.show()
+        
+        # Restore original seed
+        self._set_global_seed(self.seed)
