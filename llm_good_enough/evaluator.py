@@ -1044,12 +1044,31 @@ class LLMGoodEnough:
         """
         Stability test using the RANDOM judge instead of a random human.
 
-        For each percentage p:
-            1) Bootstrap-sample rows.
-            2) Compute human–human disagreements.
-            3) Compute random-judge–human disagreements from RANDOM_as_a_judge.
-            4) Run MWU (p > 0.05 = accepted).
-            5) Check stability of acceptance decisions.
+        **How the algorithm works:**
+        ----------------------------
+            1. For each percentage p:
+                1) Bootstrap-sample rows.
+                2) Compute human–human disagreements.
+                3) Compute random-judge–human disagreements from `RANDOM_as_a_judge`.
+                4) Run MWU (p > 0.05 = accepted).
+                5) Check stability of acceptance decisions.
+                
+            2. Plot the results.
+
+        Parameters
+        ----------
+        percentages : list of int, default=[5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+            Percentages of data to sample.
+        iterations : int, default=1000
+            Number of iterations to run.
+        stability_threshold : float, default=0.01
+            Stability threshold for the acceptance rate.
+        save_path : str or None, default=None
+            Path to save the figure.
+
+        Returns
+        -------
+        None
         """
 
         import matplotlib.pyplot as plt
