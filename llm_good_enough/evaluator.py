@@ -1208,27 +1208,34 @@ class LLMGoodEnough:
         perc, acc, conv, iters = zip(*results)
 
         fig, ax = plt.subplots(figsize=(12, 7))
-        ax.plot(perc, acc, marker="o", linewidth=2, zorder=1)
+        ax.plot(perc, acc, marker="o", linewidth=2.5, markersize=10, 
+                markeredgecolor="white", markeredgewidth=1.5, zorder=1)
 
         for p, a, c, n_iter in results:
             color = "green" if c else "red"
-            ax.scatter(p, a, color=color, s=120, zorder=2, edgecolor="black", linewidth=0.5)
+            ax.scatter(p, a, color=color, s=140, zorder=2, edgecolor="black", linewidth=1)
             
-            # Annotate iteration count above each point
+            # Annotate iteration count (adaptive position: above if high, below if low)
             if show_iteration_counts and not np.isnan(a):
+                if a < 0.15:
+                    offset_y, va = -15, "top"
+                else:
+                    offset_y, va = 12, "bottom"
                 ax.annotate(
                     f"{n_iter:,}",
                     xy=(p, a),
-                    xytext=(0, 12),
+                    xytext=(0, offset_y),
                     textcoords="offset points",
                     ha="center",
-                    va="bottom",
+                    va=va,
                     fontsize=12,
                     color="dimgray",
                     fontweight="bold",
                 )
 
+        # Reference lines
         ax.axhline(0.5, linestyle="--", color="gray", alpha=0.6)
+        ax.axhline(0.0, linestyle="-", color="black", alpha=0.2, linewidth=1)  # Zero line
         
         # Add legend for convergence status
         from matplotlib.lines import Line2D
@@ -1246,7 +1253,7 @@ class LLMGoodEnough:
         )
         ax.set_xlabel("Percentage of Data Sampled", fontsize=14)
         ax.set_ylabel("Acceptance Rate (p > 0.05)", fontsize=14)
-        ax.set_ylim(0, 1.1)  # Extra space for annotations
+        ax.set_ylim(-0.12, 1.15)  # Room at bottom for low values + annotations
         ax.set_xlim(min(perc) - 3, max(perc) + 3)
         ax.grid(alpha=0.3)
 
@@ -1461,32 +1468,42 @@ class LLMGoodEnough:
             alpha=0.3, color='steelblue', label=f'{int(confidence_level*100)}% CI across {n_seeds} seeds'
         )
         
-        # Mean line
-        ax.plot(percentages, means, 'o-', color='steelblue', linewidth=2, markersize=8, label='Mean acceptance rate')
+        # Mean line with larger markers for visibility at edges
+        ax.plot(percentages, means, 'o-', color='steelblue', linewidth=2.5, markersize=10, 
+                markeredgecolor='white', markeredgewidth=1.5, label='Mean acceptance rate', zorder=3)
         
-        # Annotate convergence rate
+        # Annotate convergence rate (adaptive position: above if high, below if low)
         for p, mean, conv_count in zip(percentages, means, [convergence_rates[p] for p in percentages]):
             if not np.isnan(mean):
                 conv_pct = conv_count / n_seeds * 100
+                # Put annotation below if mean is low, above if mean is high
+                if mean < 0.15:
+                    offset_y, va = -18, 'top'
+                else:
+                    offset_y, va = 15, 'bottom'
                 ax.annotate(
                     f'{conv_pct:.0f}%',
                     xy=(p, mean),
-                    xytext=(0, 15),
+                    xytext=(0, offset_y),
                     textcoords='offset points',
                     ha='center',
+                    va=va,
                     fontsize=9,
                     color='darkgreen' if conv_pct > 80 else 'darkorange',
                     fontweight='bold',
                 )
         
-        ax.axhline(0.5, linestyle='--', color='gray', alpha=0.6)
+        # Reference lines
+        ax.axhline(0.5, linestyle='--', color='gray', alpha=0.6, label='50% threshold')
+        ax.axhline(0.0, linestyle='-', color='black', alpha=0.2, linewidth=1)  # Zero line for visibility
+        
         ax.set_title(
             f"Seed Sensitivity Analysis\n(Mean ± {int(confidence_level*100)}% CI across {n_seeds} seeds)",
             fontsize=18, fontweight='bold'
         )
         ax.set_xlabel("Percentage of Data Sampled", fontsize=14)
         ax.set_ylabel("Acceptance Rate", fontsize=14)
-        ax.set_ylim(-0.05, 1.15)
+        ax.set_ylim(-0.12, 1.15)  # More room at bottom for low values + annotations
         ax.set_xlim(min(percentages) - 3, max(percentages) + 3)
         ax.legend(loc='upper right', fontsize=11)
         ax.grid(alpha=0.3)
