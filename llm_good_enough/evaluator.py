@@ -507,10 +507,11 @@ class LLMGoodEnough:
             legend.get_title().set_fontweight('bold')
             legend.get_title().set_fontsize(13.5)
 
-            ax.set_title(display_name, fontweight='bold', fontsize=20)
-            ax.set_xlabel('Degree of Disagreement', fontsize=13.5)
-            ax.set_ylabel('Probability', fontsize=13.5)
+            ax.set_title(display_name, fontweight='bold', fontsize=21)
+            ax.set_xlabel('Degree of Disagreement', fontsize=17, fontweight='bold')
+            ax.set_ylabel('Probability', fontsize=17, fontweight='bold')
             ax.set_xticks(categories)
+            ax.tick_params(axis='both', which='major', labelsize=16)
             ax.set_xlim(min(categories) - bar_width - 0.1, max(categories) + bar_width + 0.1)
             ax.set_ylim(0, y_lim)
 
@@ -644,12 +645,12 @@ class LLMGoodEnough:
             legend.get_title().set_fontsize(13.5)
 
             # Axis formatting (identical to original style)
-            ax.set_title(name, fontweight="bold", fontsize=20)
-            ax.set_xlabel("Degree of Disagreement", fontsize=17)
-            ax.set_ylabel("Probability", fontsize=17)
+            ax.set_title(name, fontweight="bold", fontsize=21)
+            ax.set_xlabel("Degree of Disagreement", fontsize=17, fontweight="bold")
+            ax.set_ylabel("Probability", fontsize=17, fontweight="bold")
             ax.set_xticks(categories)
             ax.set_yticks(np.arange(0, 0.6, 0.1))
-            ax.tick_params(axis="both", which="major", labelsize=13)
+            ax.tick_params(axis="both", which="major", labelsize=16)
             ax.set_xlim(min(categories) - bar_width - 0.1, max(categories) + bar_width + 0.1)
             ax.set_ylim(0, y_lim)
 
@@ -714,37 +715,43 @@ class LLMGoodEnough:
 
         # ----- Panel A -----
         pA, pB = self._split_half(df_mc["p_value"].values)
-        sns.kdeplot(pA, fill=True, ax=axes[0], label="First half", alpha=0.5, color="royalblue")
-        sns.kdeplot(pB, fill=True, ax=axes[0], label="Second half", alpha=0.5, color="#333333")
+        label_pA = f"First half\n(μ={np.mean(pA):.3f}, σ={np.std(pA):.3f})"
+        label_pB = f"Second half\n(μ={np.mean(pB):.3f}, σ={np.std(pB):.3f})"
+        sns.kdeplot(pA, fill=True, ax=axes[0], label=label_pA, alpha=0.5, color="royalblue")
+        sns.kdeplot(pB, fill=True, ax=axes[0], label=label_pB, alpha=0.5, color="#333333")
         axes[0].axvline(0.05, linestyle="--", color="black")
         axes[0].set_title(
-            "Convergence Diagnostics:\nMonte Carlo p-Value Distribution",
+            "Monte Carlo p-Value Distribution",
             fontweight="bold",
-            fontsize=18,
+            fontsize=21,
         )
-        axes[0].set_xlabel("p-Value", fontsize=14, fontweight="bold")
-        axes[0].set_ylabel("Density", fontsize=14, fontweight="bold")
-        axes[0].legend()
+        axes[0].set_xlabel("p-Value", fontsize=17, fontweight="bold")
+        axes[0].set_ylabel("Density", fontsize=17, fontweight="bold")
+        axes[0].tick_params(axis='both', which='major', labelsize=16)
+        axes[0].legend(edgecolor="black", facecolor="white", framealpha=1, fontsize=17, loc="best")
 
         # ----- Panel B -----
         dA, dB = self._split_half(df_mc["delta_mean"].values)
-        sns.kdeplot(dA, fill=True, ax=axes[1], label="First half", alpha=0.5, color="royalblue")
-        sns.kdeplot(dB, fill=True, ax=axes[1], label="Second half", alpha=0.5, color="#333333")
+        label_dA = f"First half\n(μ={np.mean(dA):.4f}, σ={np.std(dA):.4f})"
+        label_dB = f"Second half\n(μ={np.mean(dB):.4f}, σ={np.std(dB):.4f})"
+        sns.kdeplot(dA, fill=True, ax=axes[1], label=label_dA, alpha=0.5, color="royalblue")
+        sns.kdeplot(dB, fill=True, ax=axes[1], label=label_dB, alpha=0.5, color="#333333")
         axes[1].axvline(0, linestyle="-.", color="black")
         axes[1].set_title(
-            "Convergence Diagnostics:\nMonte Carlo Δ Mean Disagreement",
+            "Monte Carlo Δ Mean Disagreement Distribution",
             fontweight="bold",
-            fontsize=18,
+            fontsize=21,
         )
-        axes[1].set_xlabel("Δ Mean Disagreement", fontsize=14, fontweight="bold")
-        axes[1].set_ylabel("Density", fontsize=14, fontweight="bold")
-        axes[1].legend()
+        axes[1].set_xlabel("Δ Mean Disagreement", fontsize=17, fontweight="bold")
+        axes[1].set_ylabel("Density", fontsize=17, fontweight="bold")
+        axes[1].tick_params(axis='both', which='major', labelsize=16)
+        axes[1].legend(edgecolor="black", facecolor="white", framealpha=1, fontsize=17, loc="best")
 
         # ----- Panel C -----
         sns.scatterplot(
             data=df_mc, x="delta_mean", y="p_value",
             alpha=0.3, s=100, color="orangered", ax=axes[2],
-            label="Random judges"
+            label=f"Random judges\n(n={iterations:,})"
         )
 
         # GPT-4 reference point
@@ -761,13 +768,14 @@ class LLMGoodEnough:
         axes[2].axhline(0.05, linestyle="--", color="black")
         axes[2].axvline(0, linestyle="-.", color="gray")
         axes[2].set_title(
-            f"Δ Mean vs p-Value: Monte Carlo Cloud vs LLM \n({iterations:,} samples)",
+            "Monte Carlo Cloud vs LLM Judges",
             fontweight="bold",
-            fontsize=18,
+            fontsize=21,
         )
-        axes[2].set_xlabel("Δ Mean", fontsize=14, fontweight="bold")
-        axes[2].set_ylabel("p-Value", fontsize=14, fontweight="bold")
-        axes[2].legend()
+        axes[2].set_xlabel("Δ Mean Disagreement", fontsize=17, fontweight="bold")
+        axes[2].set_ylabel("p-Value", fontsize=17, fontweight="bold")
+        axes[2].tick_params(axis='both', which='major', labelsize=16)
+        axes[2].legend(edgecolor="black", facecolor="white", framealpha=1, fontsize=17)
 
         plt.tight_layout()
         return fig
@@ -802,37 +810,43 @@ class LLMGoodEnough:
 
         # ----- Panel A: p-Value Convergence -----
         pA, pB = self._split_half(df_mc["p_value"].values)
-        sns.kdeplot(pA, fill=True, ax=axes[0], label="First half", alpha=0.5, color="royalblue")
-        sns.kdeplot(pB, fill=True, ax=axes[0], label="Second half", alpha=0.5, color="#333333")
+        label_pA = f"First half\n(μ={np.mean(pA):.3f}, σ={np.std(pA):.3f})"
+        label_pB = f"Second half\n(μ={np.mean(pB):.3f}, σ={np.std(pB):.3f})"
+        sns.kdeplot(pA, fill=True, ax=axes[0], label=label_pA, alpha=0.5, color="royalblue")
+        sns.kdeplot(pB, fill=True, ax=axes[0], label=label_pB, alpha=0.5, color="#333333")
         axes[0].axvline(0.05, linestyle="--", color="black")
         axes[0].set_title(
-            "Panel A: Convergence Diagnostics\nMonte Carlo p-Value Distribution",
+            "Monte Carlo p-Value Distribution",
             fontweight="bold",
-            fontsize=18,
+            fontsize=21,
         )
-        axes[0].set_xlabel("p-Value", fontsize=14, fontweight="bold")
-        axes[0].set_ylabel("Density", fontsize=14, fontweight="bold")
-        axes[0].legend()
+        axes[0].set_xlabel("p-Value", fontsize=17, fontweight="bold")
+        axes[0].set_ylabel("Density", fontsize=17, fontweight="bold")
+        axes[0].tick_params(axis='both', which='major', labelsize=16)
+        axes[0].legend(edgecolor="black", facecolor="white", framealpha=1, fontsize=17, loc="best")
 
         # ----- Panel B: Δ Mean Convergence -----
         dA, dB = self._split_half(df_mc["delta_mean"].values)
-        sns.kdeplot(dA, fill=True, ax=axes[1], label="First half", alpha=0.5, color="royalblue")
-        sns.kdeplot(dB, fill=True, ax=axes[1], label="Second half", alpha=0.5, color="#333333")
+        label_dA = f"First half\n(μ={np.mean(dA):.4f}, σ={np.std(dA):.4f})"
+        label_dB = f"Second half\n(μ={np.mean(dB):.4f}, σ={np.std(dB):.4f})"
+        sns.kdeplot(dA, fill=True, ax=axes[1], label=label_dA, alpha=0.5, color="royalblue")
+        sns.kdeplot(dB, fill=True, ax=axes[1], label=label_dB, alpha=0.5, color="#333333")
         axes[1].axvline(0, linestyle="-.", color="black")
         axes[1].set_title(
-            "Panel B: Convergence Diagnostics\nMonte Carlo Δ Mean Disagreement",
+            "Monte Carlo Δ Mean Disagreement Distribution",
             fontweight="bold",
-            fontsize=18,
+            fontsize=21,
         )
-        axes[1].set_xlabel("Δ Mean Disagreement", fontsize=14, fontweight="bold")
-        axes[1].set_ylabel("Density", fontsize=14, fontweight="bold")
-        axes[1].legend()
+        axes[1].set_xlabel("Δ Mean Disagreement", fontsize=17, fontweight="bold")
+        axes[1].set_ylabel("Density", fontsize=17, fontweight="bold")
+        axes[1].tick_params(axis='both', which='major', labelsize=16)
+        axes[1].legend(edgecolor="black", facecolor="white", framealpha=1, fontsize=17, loc="best")
 
         # ----- Panel C: Monte Carlo Cloud + Multiple LLMs -----
         sns.scatterplot(
             data=df_mc, x="delta_mean", y="p_value",
             alpha=0.3, s=100, color="orangered", ax=axes[2],
-            label="Random judges"
+            label=f"Random judges\n(n={iterations:,})"
         )
 
         # Color palette for multiple LLMs
@@ -852,17 +866,16 @@ class LLMGoodEnough:
 
         axes[2].axhline(0.05, linestyle="--", color="black")
         axes[2].axvline(0, linestyle="-.", color="gray")
-        
-        n_llms = len(llm_results)
-        title_suffix = "LLMs" if n_llms > 1 else "LLM"
+
         axes[2].set_title(
-            f"Panel C: Δ Mean vs p-Value\nMonte Carlo Cloud ({iterations:,} samples) vs {n_llms} {title_suffix}",
+            "Monte Carlo Cloud vs LLM Judges",
             fontweight="bold",
-            fontsize=18,
+            fontsize=21,
         )
-        axes[2].set_xlabel("Δ Mean", fontsize=14, fontweight="bold")
-        axes[2].set_ylabel("p-Value", fontsize=14, fontweight="bold")
-        axes[2].legend(loc="upper right")
+        axes[2].set_xlabel("Δ Mean Disagreement", fontsize=17, fontweight="bold")
+        axes[2].set_ylabel("p-Value", fontsize=17, fontweight="bold")
+        axes[2].tick_params(axis='both', which='major', labelsize=16)
+        axes[2].legend(edgecolor="black", facecolor="white", framealpha=1, fontsize=17)
 
         plt.tight_layout()
         return fig
@@ -1041,6 +1054,7 @@ class LLMGoodEnough:
         max_iterations: int = 10000,
         check_interval: int = 100,
         convergence_threshold: float = 0.01,
+        relative_convergence: bool = True,
         save_path: str | None = None,
         show_iteration_counts: bool = True,
     ) -> None:
@@ -1060,10 +1074,11 @@ class LLMGoodEnough:
 
         **Algorithm:**
             For each percentage p:
-            1. Bootstrap-sample p% of rows
-            2. Compute human–human and random-judge–human disagreements
-            3. Run MWU test (accepted if p > 0.05)
-            4. Repeat until split-half acceptance rates converge or max_iterations
+                1. Bootstrap-sample p% of rows
+                2. Generate a fresh random judge (new random ratings each iteration)
+                3. Compute human–human and random-judge–human disagreements
+                4. Run MWU test (accepted if p > 0.05)
+                5. Repeat until split-half acceptance rates converge or max_iterations
         
         **Acceptance rate** 
            = number of times the random judge is accepted as human-like / total number of iterations
@@ -1102,6 +1117,22 @@ class LLMGoodEnough:
             Check convergence every N iterations (after min_iterations).
         convergence_threshold : float
             Stop when split-half difference in acceptance rate is below this.
+            Interpretation depends on `relative_convergence`:
+            - If False (absolute): threshold is a fixed value (e.g., 0.01 = 1 percentage point)
+            - If True (relative): threshold is a proportion (e.g., 0.05 = 5% of current mean)
+        relative_convergence : bool, default=True
+            Whether to use relative or absolute convergence criterion.
+            ----------------------------------------------------------------------------------
+            | **Relative (True, recommended):**                                              |
+            |    Stop when `|mean_A - mean_B| < threshold * mean(mean_A, mean_B)`.           |
+            |    Ensures proportional stability: demands tighter precision at low            |
+            |    and allows more slack at high rates (where small fluctuations matter less). |
+            |    A floor of `threshold / 10` prevents issues when mean ≈ 0.                  |
+            |--------------------------------------------------------------------------------|
+            | **Absolute (False):**                                                          |
+            |    Stop when `|mean_A - mean_B| < threshold`.                                  |
+            |    Uses a fixed precision regardless of acceptance rate.                       |
+            ----------------------------------------------------------------------------------
         save_path : str or None
             Path to save the figure.
         show_iteration_counts : bool
@@ -1114,9 +1145,9 @@ class LLMGoodEnough:
 
         # Reseed for reproducibility across repeated calls
         self._set_global_seed(self.seed)
+        rng = np.random.default_rng(self.seed)
 
         human_cols = self.human_cols
-        rand_col = "RANDOM_as_a_judge"
         df = self.df.reset_index(drop=True)
 
         # results: (percentage, mean_acceptance, converged_flag, n_iterations)
@@ -1140,6 +1171,8 @@ class LLMGoodEnough:
                 for _, row in sample[human_cols].iterrows():
                     vals = row.dropna().to_numpy()
                     if len(vals) >= 2:
+                        # compute upper triangle pairwise differences 
+                        # = absolute differences between all pairs of human judges (i.e. human-human disagreements)
                         diffs = np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
                         human_dis.extend(diffs)
 
@@ -1148,17 +1181,12 @@ class LLMGoodEnough:
                     iteration_count += 1
                     continue
 
-                # --- 3) Random-judge–human disagreements ---
-                pseudo_vals = sample[rand_col].to_numpy()
+                # --- 3) Random-judge–human disagreements (fresh random judge each iteration) ---
                 human_matrix = sample[human_cols].to_numpy()
-
-                # mask rows where random judge is NaN (unlikely)
-                mask = ~np.isnan(pseudo_vals)
-                pseudo_vals = pseudo_vals[mask]
-                human_sub = human_matrix[mask]
+                pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=len(sample))
 
                 pseudo_dis = []
-                for pj, row_vals in zip(pseudo_vals, human_sub):
+                for pj, row_vals in zip(pseudo_vals, human_matrix):
                     row_vals = row_vals[~np.isnan(row_vals)]
                     if len(row_vals) > 0:
                         pseudo_dis.extend(np.abs(row_vals - pj))
@@ -1177,16 +1205,29 @@ class LLMGoodEnough:
                 iteration_count += 1
 
                 # --- 5) Check convergence periodically ---
-                if (iteration_count >= min_iterations and 
+                if (
+                    iteration_count >= min_iterations and 
                     iteration_count % check_interval == 0 and 
-                    len(decisions) >= min_iterations):
+                    len(decisions) >= min_iterations
+                ):
                     
                     decisions_arr = np.array(decisions)
                     half = len(decisions_arr) // 2
                     mean_A = decisions_arr[:half].mean()
                     mean_B = decisions_arr[half:].mean()
-                    
-                    if abs(mean_A - mean_B) < convergence_threshold:
+
+                    # Compute effective threshold (absolute or relative)
+                    if relative_convergence:
+                        # Relative: threshold as proportion of current mean
+                        # Floor prevents issues when mean is near zero
+                        mean_both = (mean_A + mean_B) / 2
+                        floor = convergence_threshold / 10
+                        effective_threshold = max(convergence_threshold * mean_both, floor)
+                    else:
+                        # Absolute (original behavior)
+                        effective_threshold = convergence_threshold
+
+                    if abs(mean_A - mean_B) < effective_threshold:
                         converged = True
                         break
 
@@ -1212,7 +1253,7 @@ class LLMGoodEnough:
                 markeredgecolor="white", markeredgewidth=1.5, zorder=1)
 
         for p, a, c, n_iter in results:
-            color = "green" if c else "red"
+            color = "springgreen" if c else "orangered"
             ax.scatter(p, a, color=color, s=140, zorder=2, edgecolor="black", linewidth=1)
             
             # Annotate iteration count (adaptive position: above if high, below if low)
@@ -1240,19 +1281,20 @@ class LLMGoodEnough:
         # Add legend for convergence status
         from matplotlib.lines import Line2D
         legend_elements = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='springgreen', 
                    markersize=10, markeredgecolor='black', label='Converged'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='orangered', 
                    markersize=10, markeredgecolor='black', label='Max iterations reached'),
         ]
-        ax.legend(handles=legend_elements, loc='lower right', fontsize=11)
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=14, edgecolor="black", facecolor="white", framealpha=1)
         
         ax.set_title(
-            "Human Stability Test Using Random Judge\n(Adaptive Sampling Until Convergence)",
-            fontsize=18, fontweight="bold"
+            "Sample Size vs Random Judge Acceptance",
+            fontsize=21, fontweight="bold"
         )
-        ax.set_xlabel("Percentage of Data Sampled", fontsize=14)
-        ax.set_ylabel("Acceptance Rate (p > 0.05)", fontsize=14)
+        ax.set_xlabel("Percentage of Data Sampled", fontsize=17, fontweight="bold")
+        ax.set_ylabel("Acceptance Rate (p > 0.05)", fontsize=17, fontweight="bold")
+        ax.tick_params(axis='both', which='major', labelsize=16)
         ax.set_ylim(-0.12, 1.15)  # Room at bottom for low values + annotations
         ax.set_xlim(min(perc) - 3, max(perc) + 3)
         ax.grid(alpha=0.3)
@@ -1499,13 +1541,14 @@ class LLMGoodEnough:
         
         ax.set_title(
             f"Seed Sensitivity Analysis\n(Mean ± {int(confidence_level*100)}% CI across {n_seeds} seeds)",
-            fontsize=18, fontweight='bold'
+            fontsize=21, fontweight='bold'
         )
-        ax.set_xlabel("Percentage of Data Sampled", fontsize=14)
-        ax.set_ylabel("Acceptance Rate", fontsize=14)
+        ax.set_xlabel("Percentage of Data Sampled", fontsize=17, fontweight='bold')
+        ax.set_ylabel("Acceptance Rate", fontsize=17, fontweight='bold')
+        ax.tick_params(axis='both', which='major', labelsize=16)
         ax.set_ylim(-0.12, 1.15)  # More room at bottom for low values + annotations
         ax.set_xlim(min(percentages) - 3, max(percentages) + 3)
-        ax.legend(loc='upper right', fontsize=11)
+        ax.legend(loc='upper right', fontsize=14, edgecolor="black", facecolor="white", framealpha=1)
         ax.grid(alpha=0.3)
         
         # Add note about annotations
