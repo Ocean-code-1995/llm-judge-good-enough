@@ -1454,21 +1454,15 @@ class LLMGoodEnough:
                 linewidth=1,
             )
 
-            # Annotate iteration count (position adapts to value height)
+            # Annotate iteration count (always above scatter point)
             if show_iteration_counts and not np.isnan(a):
-                # Place label below for low values, above for high values
-                # Exception: if exactly at y=0, place above to avoid clipping
-                if a == 0 or a >= 0.15:
-                    offset_y, va = 14, "bottom"
-                else:
-                    offset_y, va = -17, "top"
                 ax.annotate(
                     f"{n_iter:,}",
                     xy=(p_val, a),
-                    xytext=(0, offset_y),
+                    xytext=(0, 14),
                     textcoords="offset points",
                     ha="center",
-                    va=va,
+                    va="bottom",
                     fontsize=14,
                     color="dimgray",
                     fontweight="bold",
