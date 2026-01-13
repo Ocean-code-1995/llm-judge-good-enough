@@ -944,6 +944,64 @@ class LLMGoodEnough:
 
         plt.show()
 
+    def count_pvalue_samples(
+        self,
+        iterations: int = 25_000,
+        threshold: float = 0.05,
+    ) -> dict:
+        """
+        Count how many Monte Carlo p-values fall above/below a significance threshold.
+
+        This is useful for quantifying Panel A of the robustness analysis:
+        "How often does a random judge appear statistically indistinguishable from humans?"
+
+        Parameters
+        ----------
+        iterations : int, default=25_000
+            Number of Monte Carlo samples (random judges) to generate.
+        threshold : float, default=0.05
+            Significance threshold (typically 0.05).
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'total': total number of samples
+            - 'above': count of p-values > threshold
+            - 'below': count of p-values ≤ threshold  
+            - 'above_pct': percentage above threshold
+            - 'below_pct': percentage below threshold
+            - 'threshold': the threshold used
+
+        Example
+        -------
+        ```python
+        counts = judge.count_pvalue_samples(iterations=25_000, threshold=0.05)
+        print(f"Samples with p > 0.05: {counts['above']:,} ({counts['above_pct']:.2f}%)")
+        print(f"Samples with p ≤ 0.05: {counts['below']:,} ({counts['below_pct']:.2f}%)")
+        ```
+        """
+        human_dis = self.compute_human_disagreements()
+        df_mc = self._monte_carlo_random_judges(
+            iterations=iterations,
+            min_score=self.min_score,
+            max_score=self.max_score,
+            human_dis=human_dis,
+        )
+
+        total = len(df_mc)
+        above = int((df_mc['p_value'] > threshold).sum())
+        below = int((df_mc['p_value'] <= threshold).sum())
+
+        return {
+            'total': total,
+            'above': above,
+            'below': below,
+            'above_pct': above / total * 100,
+            'below_pct': below / total * 100,
+            'threshold': threshold,
+        }
+
     def plot_monte_carlo_robustness_multi(
         self,
         llm_cols: list[str] | None = None,
