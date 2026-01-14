@@ -1,8 +1,8 @@
 # When is an LLM-as-a-judge good enough?
 
 <p align="center">
-  <a href="benchmarks/politifact/figures/monte_carlo_s3.gif">
-    <img src="benchmarks/politifact/figures/monte_carlo_s3.gif" width="900" style="max-width: 100%; height: auto;" alt="Monte Carlo robustness (PolitiFact S3)" />
+  <a href="benchmarks/politifact/figures/gifs/monte_carlo_s3.gif">
+    <img src="benchmarks/politifact/figures/gifs/monte_carlo_s3.gif" width="900" style="max-width: 100%; height: auto;" alt="Monte Carlo robustness (PolitiFact S3)" />
   </a>
 </p>
 
