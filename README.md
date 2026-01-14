@@ -156,6 +156,7 @@ The `LLMGoodEnough` class provides the following public methods:
 | Method | Description |
 |--------|-------------|
 | `plot_human_stability_analysis()` | Test if humans are stable/coherent annotators using adaptive sampling until convergence. |
+| `plot_llm_stability_analysis(llm_col)` | LLM stability analysis vs sample size (two-panel plot: acceptance rate + Δ mean disagreement). |
 | `plot_human_stability_seed_robustness(n_seeds)` | Seed sensitivity analysis — test robustness of stability conclusions across multiple random seeds. |
 
 ### **Utility**
@@ -257,9 +258,9 @@ Ideally, the LLM clusters near the top (non-significant, human-like) while the r
 
 ---
 
-### 4. Human Stability Analysis
+### 4. Human Stability Analysis (random baseline)
 
-Before evaluating an LLM judge, it's critical to verify that the human annotations themselves form a reliable baseline. The **Human Stability Analysis** answers: *"Are humans judging coherently, or is the dataset too small/noisy to evaluate an LLM reliably?"*
+Before evaluating an LLM judge, it’s critical to verify that the human annotations form a **usable baseline**. This analysis is a **power / sanity check** using a random judge: *“With increasing sample size, can we reliably reject a clearly bad (random) judge?”*
 
 <p align="center">
   <a href="diagrams/svg/human_stability_analysis.svg">
@@ -335,7 +336,24 @@ It checks whether the **random judge** tends to disagree with humans **more** th
 
 ---
 
-### 5. Seed Sensitivity Analysis
+### 5. LLM Stability Analysis (sample size vs “good enough?”)
+
+This section corresponds to `plot_llm_stability_analysis(llm_col)`.
+
+**Goal:** determine whether the *LLM “good enough” decision* is stable as sample size increases (and quantify practical deviation via effect size).
+
+**Outputs (two-panel figure):**
+- **Panel A — Acceptance rate vs sample %**: how often the LLM is “accepted” (p > 0.05) across bootstrap iterations at each sample size.
+- **Panel B — Δ mean disagreement vs sample %**:  
+  \(\Delta = mean(LLM\text{–}Human) - mean(Human\text{–}Human)\).
+
+**Interpretation (rule of thumb):**
+- Acceptance stays high near ~100% **and** Δ stays near 0 → robustly “good enough”.
+- Acceptance drops as sample size increases (often with Δ > 0) → small-sample acceptance was likely due to low power; the LLM is not robustly human-like.
+
+---
+
+### 6. Seed Sensitivity Analysis
 
 Results can vary across different random initializations. The **Seed Sensitivity Analysis** tests how robust conclusions are across multiple seeds.
 
