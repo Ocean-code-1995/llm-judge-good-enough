@@ -1359,6 +1359,134 @@ class LLMGoodEnough:
 
         return results
 
+    def _compute_llm_stability_for_percentage(
+        self,
+        p: int,
+        df: pd.DataFrame,
+        human_cols: list[str],
+        llm_col: str,
+        min_iterations: int,
+        max_iterations: int,
+        check_interval: int,
+        convergence_threshold: float,
+        relative_convergence: bool,
+        seed: int,
+    ) -> tuple[int, float, float, bool, int]:
+        """
+        Compute LLM acceptance-rate stability + effect size (Δ mean) for one sample percentage.
+
+        For each bootstrap iteration on a sample of size p%:
+        - compute Human–Human disagreement distribution
+        - compute LLM–Human disagreement distribution for `llm_col`
+        - run one-sided MWU test (alternative='greater') for LLM–Human > Human–Human
+        - record decision: accepted if p_value > 0.05 (fail-to-reject)
+        - record delta_mean = mean(LLM–Human) - mean(Human–Human)
+
+        Convergence is detected via split-half acceptance rate stability (same as random-judge stability).
+        """
+        if llm_col not in df.columns:
+            raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
+
+        rng = np.random.default_rng(seed + p)
+        n_rows = max(1, int(len(df) * (p / 100)))
+
+        decisions: list[bool] = []
+        deltas: list[float] = []
+        iteration_count = 0
+        converged = False
+
+        while iteration_count < max_iterations:
+            # --- 1) Bootstrap subsample rows ---
+            sample = df.sample(
+                n_rows,
+                replace=True,
+                random_state=rng.integers(0, 2**32 - 1),
+            )
+
+            # --- 2) Human–Human disagreements ---
+            human_dis = []
+            for _, row in sample[human_cols].iterrows():
+                vals = row.dropna().to_numpy()
+                if len(vals) >= 2:
+                    human_dis.extend(
+                        np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), 1)]
+                    )
+            human_dis = np.asarray(human_dis)
+            if len(human_dis) == 0:
+                iteration_count += 1
+                continue
+
+            # --- 3) LLM–Human disagreements ---
+            llm_dis = []
+            for _, row in sample[[llm_col] + human_cols].iterrows():
+                llm_val = row[llm_col]
+                if pd.notna(llm_val):
+                    vals = row[human_cols].dropna().to_numpy()
+                    if len(vals):
+                        llm_dis.extend(np.abs(vals - llm_val))
+            llm_dis = np.asarray(llm_dis)
+            if len(llm_dis) == 0:
+                iteration_count += 1
+                continue
+
+            # --- 4) MWU test + record decision ---
+            p_val = mannwhitneyu(llm_dis, human_dis, alternative="greater").pvalue
+            decisions.append(p_val > 0.05)
+            deltas.append(float(np.mean(llm_dis) - np.mean(human_dis)))
+            iteration_count += 1
+
+            # --- 5) Convergence check (split-half acceptance rate) ---
+            if iteration_count >= min_iterations and iteration_count % check_interval == 0:
+                half = len(decisions) // 2
+                mean_A = np.mean(decisions[:half])
+                mean_B = np.mean(decisions[half:])
+
+                if self._has_converged(
+                    mean_A,
+                    mean_B,
+                    convergence_threshold,
+                    relative_convergence,
+                ):
+                    converged = True
+                    break
+
+        mean_acceptance = float(np.mean(decisions)) if decisions else np.nan
+        mean_delta = float(np.mean(deltas)) if deltas else np.nan
+        return p, mean_acceptance, mean_delta, converged, iteration_count
+
+    def _run_percentage_loop_llm(
+        self,
+        percentages: list[int],
+        *,
+        parallel: bool,
+        n_jobs: int | None,
+        **worker_kwargs,
+    ) -> list[tuple[int, float, float, bool, int]]:
+        """
+        Execute LLM stability analysis across all sample percentages.
+        """
+        if parallel:
+            if n_jobs is None:
+                n_jobs = max(1, multiprocessing.cpu_count() - 1)
+
+            results = Parallel(n_jobs=n_jobs, backend="loky")(
+                delayed(self._compute_llm_stability_for_percentage)(
+                    p=p,
+                    **worker_kwargs,
+                )
+                for p in percentages
+            )
+        else:
+            results = [
+                self._compute_llm_stability_for_percentage(
+                    p=p,
+                    **worker_kwargs,
+                )
+                for p in percentages
+            ]
+
+        return results
+
     def plot_human_stability_analysis(
         self,
         percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
@@ -1587,6 +1715,190 @@ class LLMGoodEnough:
         plt.tight_layout()
 
         # Save figure if path provided
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            if self.verbosity > 0:
+                print(f"✅ Figure saved → {save_path}")
+
+        plt.show()
+
+    def plot_llm_stability_analysis(
+        self,
+        llm_col: str,
+        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+        min_iterations: int = 200,
+        max_iterations: int = 10_000,
+        check_interval: int = 100,
+        convergence_threshold: float = 0.01,
+        relative_convergence: bool = True,
+        parallel: bool = False,
+        n_jobs: int | None = None,
+        save_path: str | None = None,
+        show_iteration_counts: bool = True,
+    ) -> None:
+        """
+        LLM Stability Analysis (sample size vs acceptance + effect size).
+
+        Mirrors `plot_human_stability_analysis()` but replaces the random judge with a
+        *specific LLM judge column* and produces a 2-panel figure:
+
+        - Panel A: acceptance rate vs sample percentage (accepted if p > 0.05)
+        - Panel B: Δ mean disagreement vs sample percentage
+          Δ = mean(LLM–Human) − mean(Human–Human)
+
+        Interpretation:
+        - stable high acceptance near 100% + Δ≈0 suggests the LLM is robustly “good enough”
+        - acceptance dropping with sample size (often with Δ>0) indicates the LLM is not robustly human-like;
+          small-sample acceptance may have been due to low power.
+        """
+        if llm_col not in self.df.columns:
+            raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
+
+        df = self.df.reset_index(drop=True)
+
+        results = self._run_percentage_loop_llm(
+            percentages=percentages,
+            parallel=parallel,
+            n_jobs=n_jobs,
+            df=df,
+            human_cols=self.human_cols,
+            llm_col=llm_col,
+            min_iterations=min_iterations,
+            max_iterations=max_iterations,
+            check_interval=check_interval,
+            convergence_threshold=convergence_threshold,
+            relative_convergence=relative_convergence,
+            seed=self.seed,
+        )
+
+        perc, acc, delta, conv, iters = zip(*results)
+
+        import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+
+        # -------------------------
+        # Panel A: Acceptance rate
+        # -------------------------
+        ax1.plot(
+            perc, acc,
+            marker="o",
+            linewidth=2.5,
+            markersize=10,
+            markeredgecolor="white",
+            markeredgewidth=1.5,
+            zorder=1,
+        )
+
+        for p_val, a, _delta, c, n_iter in results:
+            color = "springgreen" if c else "orangered"
+            ax1.scatter(
+                p_val, a,
+                color=color,
+                s=140,
+                zorder=2,
+                edgecolor="black",
+                linewidth=1,
+            )
+
+            if show_iteration_counts and not np.isnan(a):
+                ax1.annotate(
+                    f"{n_iter:,}",
+                    xy=(p_val, a),
+                    xytext=(0, 14),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=12,
+                    color="dimgray",
+                    fontweight="bold",
+                )
+
+        ax1.axhline(0.5, linestyle="--", color="gray", alpha=0.6)
+        ax1.axhline(0.0, linestyle="-", color="black", alpha=0.2, linewidth=1)
+        ax1.set_title("LLM Acceptance Rate vs Sample Size", fontsize=18, fontweight="bold")
+        ax1.set_xlabel("Percentage of Data Sampled", fontsize=14, fontweight="bold")
+        ax1.set_ylabel("Acceptance Rate (p > 0.05)", fontsize=14, fontweight="bold")
+        ax1.tick_params(axis="both", which="major", labelsize=12)
+        ax1.set_ylim(-0.12, 1.15)
+        ax1.set_xlim(min(perc) - 3, max(perc) + 3)
+        ax1.grid(alpha=0.3)
+
+        legend_elements = [
+            Line2D(
+                [0], [0],
+                marker="o",
+                color="w",
+                markerfacecolor="springgreen",
+                markersize=10,
+                markeredgecolor="black",
+                label="Converged",
+            ),
+            Line2D(
+                [0], [0],
+                marker="o",
+                color="w",
+                markerfacecolor="orangered",
+                markersize=10,
+                markeredgecolor="black",
+                label="Max iterations reached",
+            ),
+        ]
+        ax1.legend(
+            handles=legend_elements,
+            loc="best",
+            fontsize=12,
+            edgecolor="black",
+            facecolor="white",
+            framealpha=1,
+        )
+
+        if show_iteration_counts:
+            ax1.text(
+                0.02, 0.02,
+                "Annotations = iterations until convergence",
+                transform=ax1.transAxes,
+                fontsize=11,
+                color="gray",
+                style="italic",
+            )
+
+        # -------------------------
+        # Panel B: Δ mean
+        # -------------------------
+        ax2.plot(
+            perc, delta,
+            marker="o",
+            linewidth=2.5,
+            markersize=10,
+            markeredgecolor="white",
+            markeredgewidth=1.5,
+            zorder=1,
+        )
+
+        for p_val, d, c in zip(perc, delta, conv):
+            color = "springgreen" if c else "orangered"
+            ax2.scatter(
+                p_val, d,
+                color=color,
+                s=140,
+                zorder=2,
+                edgecolor="black",
+                linewidth=1,
+            )
+
+        ax2.axhline(0.0, linestyle="-.", color="black", alpha=0.7)
+        ax2.set_title("Δ Mean Disagreement vs Sample Size", fontsize=18, fontweight="bold")
+        ax2.set_xlabel("Percentage of Data Sampled", fontsize=14, fontweight="bold")
+        ax2.set_ylabel("Δ Mean (LLM–Human − Human–Human)", fontsize=14, fontweight="bold")
+        ax2.tick_params(axis="both", which="major", labelsize=12)
+        ax2.set_xlim(min(perc) - 3, max(perc) + 3)
+        ax2.grid(alpha=0.3)
+
+        fig.suptitle(f"LLM Stability Analysis — {self._clean_model_name(llm_col)}", fontsize=20, fontweight="bold")
+        plt.tight_layout()
+
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
             if self.verbosity > 0:
