@@ -1,5 +1,22 @@
 # When is an LLM-as-a-judge good enough?
 
+<p align="left">
+  <a href="xxxxxxxx.xx">
+    <img src="https://img.shields.io/badge/Paper-Coming%20Soon-555555" alt="Paper (coming soon)" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-2EA44F" alt="MIT License" />
+  </a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+" />
+  <img src="https://img.shields.io/badge/LLM--as--a--Judge-Evaluation-6A5ACD" alt="LLM-as-a-judge evaluation" />
+  <img src="https://img.shields.io/badge/Statistics-Hypothesis%20Testing-2E8B57" alt="Hypothesis testing" />
+  <img src="https://img.shields.io/badge/Robustness-Stability%20%26%20Sensitivity-FF8C00" alt="Stability and sensitivity" />
+  <img src="https://img.shields.io/badge/Benchmarks-MovieLens%20%7C%20Newsroom%20%7C%20PolitiFact%20%7C%20WMT--Human-444444" alt="Benchmarks" />
+  <img src="https://img.shields.io/badge/Reproducibility-Notebooks%20%26%20Data-0EA5E9" alt="Reproducibility: notebooks and data" />
+  <img src="https://img.shields.io/badge/Package-PyPI%20(planned)-8A2BE2" alt="PyPI planned" />
+  <img src="https://img.shields.io/badge/Status-Research%20Code-9CA3AF" alt="Status: research code" />
+</p>
+
 <p align="center">
   <a href="benchmarks/politifact/figures/gifs/monte_carlo_s3.gif">
     <img src="benchmarks/politifact/figures/gifs/monte_carlo_s3.gif" width="900" style="max-width: 100%; height: auto;" alt="Monte Carlo robustness (PolitiFact S3)" />
