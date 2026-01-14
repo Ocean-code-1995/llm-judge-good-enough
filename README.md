@@ -1,171 +1,117 @@
-# ***`When is an LLM-as-a-judge good enough?`***
----
----
-## ***`Abstract`***
+# When is an LLM-as-a-judge good enough?
 
-*Generative AI models allow us to generate human-like content, such as large language models (LLMs) generate texts. However, such created contend can only be used to automate processes if certain requirements regarding trustworthiness and correctness are fulfilled. In order to relieve people from controlling the created content, a concept known as LLM-as-a-judge is available. In this scenario, another instance of an LLM is prompted to act as a judge, and check a created text for certain quality requirements. However, such a judgement might not always align with a human judgement, which requires benchmarking the LLM-judge as well. Since a full alignment might not be achieved, the question is answered in this work, when an LLM-as-a-judge is good enough to judge a specific task fulfillment to break evaluating evaluations. For this purpose, it is made use of the fact that for evaluating generative content, judgements from different human evaluators can also differ as there might be no universal or unequivocally assessment of the quality, called a diversity of opinion. As long as the deviations of the LLM-judge from human estimations remain within the human diversity of opinion, it is suggested to call an LLM-judge as good enough.*
+<p align="center">
+  <a href="benchmarks/politifact/figures/monte_carlo_s3.gif">
+    <img src="benchmarks/politifact/figures/monte_carlo_s3.gif" width="900" style="max-width: 100%; height: auto;" alt="Monte Carlo robustness (PolitiFact S3)" />
+  </a>
+</p>
 
----
+## Abstract
 
-> ***`Paper accessible at the following link:`*** xxxxxxxx.xx
+Generative AI models can automate evaluation tasks (e.g., judging the quality of model outputs), but only if their judgments are trustworthy. This repository studies **when an LLM-as-a-judge is “good enough”** by comparing how much it disagrees with humans against how much humans disagree with each other (“diversity of opinion”). If the LLM’s deviations are within typical inter-human variability (under a statistical decision rule), the LLM can be treated as *another reasonable judge* for that task.
 
-## ***`General Approach — Is the LLM "Good Enough"?`***
+> Paper: `xxxxxxxx.xx` (placeholder)
 
-The goal is to test whether a language model's judgments align with human-level variability — that is, whether it behaves like *another human judge* rather than a random or systematically biased rater.
+## Table of Contents
 
-![General Approach](diagrams/svg/general_approach.svg)
+- [Quickstart](#quickstart)
+- [Data format expectations](#data-format-expectations)
+- [General approach: is the LLM "good enough"?](#general-approach-is-the-llm-good-enough)
+- [API reference](#api-reference)
+- [Benchmarks and reproducibility](#benchmarks-and-reproducibility)
+- [Analysis methodologies (deep dive)](#analysis-methodologies-deep-dive)
+- [Repository structure](#repository-structure)
 
-#### 1. **Measure Inter-Human Disagreement**
-For each task or item, multiple human raters provide scores.  
-All **pairwise absolute differences** between human scores are computed, forming a distribution that captures the *natural variability* in human judgment — the “diversity of human opinion.”
+## Quickstart
 
-#### 2. **Measure Human-LLM Disagreement**
-For the same items, the **absolute difference** between each human score and the LLM’s score is calculated.  
-This yields a second distribution describing how much the LLM diverges from humans.
+### Install
 
-#### 3. **Compare Distributions Statistically**
-A **Mann–Whitney U test** compares the two distributions of disagreement magnitudes:  
-- **Null hypothesis (H₀):** the LLM’s disagreement with humans is *not greater* than the typical disagreement among humans — the LLM behaves within normal human variability.  
-- **Alternative hypothesis (H₁):** the LLM’s disagreement with humans is *greater* than that among humans — meaning the LLM and humans do **not agree** to the same extent as humans agree with each other.  
-
-If the resulting *p*-value is **high (≥ 0.05)**, there is no evidence that the LLM’s disagreement differs from human-level variability — suggesting it is *“good enough.”*  
-If it is **low (< 0.05)**, the LLM’s disagreement is significantly larger, indicating it diverges meaningfully from human judgment and is *not yet human-like.*
-
-
-#### 4. **Establish a Random Baseline**
-To calibrate expectations, a **random judge** is simulated by assigning scores uniformly across the rating range.  
-This random baseline provides a clear contrast — it typically shows high disagreement and significant differences from humans, marking what “not good enough” looks like.
-
-> **In essence:**  
-> The method tests whether an LLM’s variability in judgment falls within the *natural human range* rather than resembling random noise.
-
-
-## ***Getting Started***
-
-### ***`0. Repository Structure`***
-```text
-LLM-AS-A-JUDGE-GOOD-ENOUGH
-│
-├── README.md
-├── __init__.py
-├── llm_as_a_judge
-│   ├── inference.py
-│   └── llm_as_a_judge.py
-│
-├── llm_good_enough
-│   ├── __init__.py
-│   ├── evaluator.py
-│   └── example.ipynb
-│
-├── movielens
-│   ├── data.zip
-│   ├── prompts
-│   │   ├── movielen.txt
-│   └── src
-│       └── analysis.ipynb
-│
-├── newsroom
-│   ├── data.zip
-│   ├── prompts
-│   │   ├── Coherence_prompt.txt
-│   │   ├── Fluency_prompt.txt
-│   │   ├── Informativeness_prompt.txt
-│   │   └── Relevance_prompt.txt
-│   └── src
-│       └── analysis.ipynb
-│
-├── politifact
-│   ├── data.zip
-│   ├── prompts
-│   │   ├── politifact.txt
-│   └── src
-│       └── analysis.ipynb
-│
-├─── wmt-human
-│    ├── data.zip
-│    ├── prompts
-│    │   └── prompt.txt
-│    └── src
-│        └── analysis.ipynb
-│
-└── requirements.txt
-```
-
-### ***`1. Clone Repository`***
-```bash
-git clone https://github.com/Ocean-code-1995/LLM_as_a_Judge_good_enough.git
-```
-
-```bash
-cd path/to/.../LLM_as_a_Judge_good_enough
-```
-
-### ***`2. Install dependencies`***
-
-##### Create conda envirnoment:
-```bash
-conda create --name llm-good-enough python=3.11.9
-```
-
-##### Activate virtual environment:
-```bash
-conda activate llm-good-enough
-```
-##### Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### ***`3. Usage Example`***
-
-#### ***3.1 Run LLM-as-a-judge inference***
+If you prefer conda:
 
 ```bash
-cd llm_as_a_judge
+conda create --name llm-good-enough python=3.11.9
+conda activate llm-good-enough
+pip install -r requirements.txt
 ```
 
-```bash
-python llm_as_a_judge.py
-```
-
-#### ***3.2 Is the selected LLM-as-a-judge good enough?***
-
-```bash
-touch notebook_name.ipynb
-```
+### Minimal usage (LLM “good enough?”)
 
 ```python
 import pandas as pd
-from llm_good_enough import LLMGoodEnough
+from core.llm_good_enough import LLMGoodEnough
 
-# Load your DataFrame (replace with your own data)
-df = pd.read_csv('your_data.csv')
+df = pd.read_csv("your_data.csv")
 
-# Initialize evaluator
-LLM_Evaluator = LLMGoodEnough(
+evaluator = LLMGoodEnough(
     df=df,
-    human_cols=['human_#1', 'human_#2', 'human_#3']  # replace with your human judge columns
+    human_cols=["human_#1", "human_#2", "human_#3"],
+    llm_cols=["GPT_as_a_judge"],
     min_score=0,
-    max_score=6
+    max_score=6,
 )
 
-# visualize LLM-as-a-judge good enough
-LLM_Evaluator.visulize_good_enough(
-    llm_col="GPT_as_a_judge",          # LLM-as-a-judge column name
-    y_lim=0.6,                         # y-axis limit -> probability (0-1)
+evaluator.visualize_good_enough(
+    llm_col="GPT_as_a_judge",
+    y_lim=0.6,
 )
 ```
 
-`See the following notebooks for more detailed examples:`
+### Running LLM-as-a-judge inference (optional)
 
-    - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/llm_good_enough/example.ipynb
-    - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/wmt-human/src/analysis.ipynb
-    - LLM-as-a-Judge/LLM-as-a-Judge-good-enough/newsroom/src/analysis.ipynb
+```bash
+cd core/llm_as_a_judge
+python llm_as_a_judge.py
+```
 
+More detailed examples:
+- `core/llm_good_enough/example.ipynb`
+- `benchmarks/wmt-human/src/analysis.ipynb`
+- `benchmarks/newsroom/src/analysis.ipynb`
 
----
+## Data format expectations
 
-## ***`API Reference — Public Methods`***
+Your `df` should contain:
+- **Human rating columns** listed in `human_cols` (at least **2** columns).
+- **LLM rating columns** listed in `llm_cols`.
+- Numeric ratings on a shared ordinal scale defined by `min_score`…`max_score`.
+
+Missing values are allowed, but rows with fewer than 2 non-missing human ratings are dropped internally (because no Human–Human disagreement can be computed).
+
+## General approach: is the LLM "good enough"?
+
+The goal is to test whether a language model's judgments align with human-level variability — i.e., whether it behaves like *another human judge* rather than a random or systematically biased rater.
+
+<p align="center">
+  <img src="diagrams/svg/general_approach.svg" width="650" alt="General Approach" />
+</p>
+
+### 1) Measure inter-human disagreement
+
+For each item, multiple human raters provide scores. All **pairwise absolute differences** between human scores are computed, forming a distribution that captures natural variability in human judgment (the “diversity of opinion”).
+
+### 2) Measure LLM–human disagreement
+
+For the same items, compute the **absolute difference** between each human score and the LLM’s score. This yields a second distribution describing how much the LLM diverges from humans.
+
+### 3) Compare distributions statistically
+
+A **Mann–Whitney U test** compares the two distributions:
+- **H₀**: LLM–Human disagreement is *not greater* than Human–Human disagreement
+- **H₁**: LLM–Human disagreement is *greater* than Human–Human disagreement
+
+Decision rule:
+- If **p ≥ 0.05**, we **fail to reject H₀** (no evidence the LLM diverges more than humans diverge from each other). This does **not** prove equivalence, but supports “good enough” as a practical rule.
+- If **p < 0.05**, we reject H₀ (LLM diverges significantly more than humans do from each other).
+
+### 4) (Optional) random baseline
+
+To calibrate expectations, a **random judge** is simulated by assigning scores uniformly across the rating range. This baseline provides a clear “not good enough” contrast.
+
+## API reference
 
 The `LLMGoodEnough` class provides the following public methods:
 
@@ -202,64 +148,81 @@ The `LLMGoodEnough` class provides the following public methods:
 | `reseed(new_seed)` | Reseed the random number generators for reproducibility or variation. |
 | `init_random_judge(min_score, max_score)` | Initialize the random baseline judge column. |
 
----
+## Benchmarks and reproducibility
 
-## ***`Analysis Methodologies`***
+This repository contains multiple benchmarks under `benchmarks/`, each with:
+- `data/`: human & LLM ratings (`.csv`)
+- `src/`: `preprocessing.ipynb`, `analysis.ipynb`
+- `figures/`: generated plots (`pdf/`, `svg/`)
+
+Scripts:
+- `scripts/generate_all_gifs.sh`: generate all GIFs
+- `scripts/generate_monte_carlo_gif.py`: generate Monte Carlo GIFs
+- `scripts/render_mermaid_svg.sh`: render Mermaid `.mmd` → `.svg` (transparent background)
+
+## Analysis methodologies (deep dive)
+
+This section explains what the main analysis/plotting functions do and how to interpret the outputs.
 
 
-### **Disagreement Distribution Comparison**
+### 1. Disagreement Distribution Comparison
 Implemented in `visualize_good_enough()`, this plot directly compares the **distribution of human–human**, **LLM–human**, and **random–human** disagreements.  
 It visually illustrates whether the LLM's disagreement pattern overlaps with natural human variability or drifts toward random behavior.
 
-### **Multi-Model Comparison Grid**
+### 2. Multi-Model Comparison Grid
 Implemented in `plot_judges_grid()`, this method extends the same logic to multiple candidate models.  
 It allows quick visual comparison across several LLMs to identify which behave most like human judges.
 
 
-### ***Robustness Visualization***
-The robustness visualization assesses how *consistent* and *human-like* the LLM’s judgments are across multiple randomized evaluations.  
-Each iteration reseeds the random judge, recomputes disagreement distributions, and runs a Mann–Whitney U test comparing the LLM and random judge against human disagreement.  
-For every run, two values are recorded per model:
-- The **Δ mean disagreement** = mean(Model–Human) − mean(Human–Human)  
-- The **p-value** from the Mann–Whitney test.  
+### 3. Robustness Visualization
+This section corresponds to `plot_monte_carlo_robustness()` and `plot_monte_carlo_robustness_multi()` in `core/llm_good_enough/evaluator.py`.
+
+**What is randomized (important):** the Monte Carlo simulation repeatedly samples **fresh random judges**. The selected LLM’s disagreements are computed once from your data and shown as a fixed reference point (or multiple fixed points in the multi-LLM version).
+
+**For each Monte Carlo draw (one random judge), two values are recorded:**
+- The **Δ mean disagreement** = mean(Random–Human) − mean(Human–Human)  
+- The **p-value** from a one-sided Mann–Whitney U test (`alternative="greater"`) comparing Random–Human vs Human–Human disagreements  
 
 These values are aggregated across runs to generate the following three panels:
 
 #### **Panel (A) — P-value Distribution**
 **How it’s computed:**  
-All *p*-values from repeated runs are collected and plotted as distributions (via kernel density estimation) for the LLM and the random judge.  
+All *p*-values from repeated **random-judge** runs are collected and plotted as distributions (via kernel density estimation). The implementation also overlays a split-half diagnostic (first half vs second half) to check Monte Carlo stability.  
 
 **Interpretation:**  
-This panel shows how often each judge’s disagreement with humans is *statistically different* from human–human disagreement.  
-If most values lie **above the 0.05 dashed line**, it means differences are not significant — the judge behaves within human variability.  
-If they lie **below**, disagreements are consistently significant — the judge diverges from humans.
+This panel shows how often a **random judge** looks “human-like” under the test.  
+- If many values lie **above 0.05**, the test often fails to detect that random is worse than humans (low power / too little information).  
+- If most values lie **below 0.05**, the test reliably rejects random as worse-than-human (a healthy sign that the setup has power).  
 
 **Why it’s useful:**  
-It reveals the *statistical reliability* of the LLM’s alignment with human judgment across random seeds.  
-A strong model’s curve should sit high and right (mostly non-significant), while the random baseline clusters left and below 0.05.
+It’s a **sanity check**: with enough information, random judges should mostly be rejected (p-values concentrated below 0.05). The split-half overlay helps confirm the Monte Carlo estimate is stable.  
 
 ---
 
-#### **Panel (B) — Δ Mean Disagreement (Boxplot)**
+#### **Panel (B) — Δ Mean Disagreement Distribution**
 **How it’s computed:**  
-For each run, compute the Δ mean disagreement — the difference in average disagreement between each model and the human baseline.  
-The resulting values across runs are summarized as boxplots for the LLM and random judge.
+For each run, compute the Δ mean disagreement for the **random judge** relative to humans:  
+\(\Delta = \mathbb{E}[|R - H|] - \mathbb{E}[|H_i - H_j|]\).  
+The implementation uses a split-half diagnostic (first half vs second half) via KDE to check Monte Carlo stability.  
 
 **Interpretation:**  
-This panel shows how much and how consistently the model’s disagreement deviates from human–human variability.  
-Δ mean ≈ 0 → behaves like humans.  
-Δ mean > 0 → disagrees more than humans.  
-Δ mean < 0 → disagrees less (possibly over-consistent).
+This panel shows the **effect size** distribution for random judges.  
+- Δ mean ≈ 0 → random looks human-like on average (unexpected unless the task/humans are extremely noisy)  
+- Δ mean > 0 → random disagrees more than humans (expected)  
+- Δ mean < 0 → random disagrees less than humans (rare; suggests unusual scoring / data issues)  
 
 **Why it’s useful:**  
-It visualizes *effect size stability* — whether the LLM’s deviation from humans is small and consistent (good) or large and erratic (bad).  
-A narrow, centered box for the LLM and a wide, higher one for the random judge indicate robustness.
+It separates **statistical significance** (Panel A) from **practical magnitude** (Panel B). With enough data, random should be both “significant” and have a clearly positive Δ mean.  
 
 ---
 
 #### **Panel (C) — Δ Mean vs P-value (Scatterplot)**
 **How it’s computed:**  
-Each run provides a paired (Δ mean, *p*-value). These pairs are plotted — x-axis = Δ mean (effect size), y-axis = *p*-value (significance).
+Each Monte Carlo run provides a paired (Δ mean, *p*-value) for a **random judge**. These pairs are plotted as a cloud:
+- x-axis = Δ mean (effect size)
+- y-axis = *p*-value (significance)
+
+The selected LLM judge is plotted as a **single point** (or multiple points in `plot_monte_carlo_robustness_multi()`), computed once from the observed LLM–Human disagreement distribution.  
 
 **Interpretation:**  
 This panel links the *size* of disagreement with the *strength* of statistical evidence for it.  
@@ -277,18 +240,57 @@ Ideally, the LLM clusters near the top (non-significant, human-like) while the r
 
 ---
 
-### ***Human Stability Analysis***
+### 4. Human Stability Analysis
 
 Before evaluating an LLM judge, it's critical to verify that the human annotations themselves form a reliable baseline. The **Human Stability Analysis** answers: *"Are humans judging coherently, or is the dataset too small/noisy to evaluate an LLM reliably?"*
 
+<p align="center">
+  <a href="diagrams/svg/human_stability_analysis.svg">
+    <img src="diagrams/svg/human_stability_analysis.svg" width="350" style="max-width: 100%; height: auto;" alt="Human Stability Analysis" />
+  </a>
+</p>
+
 Implemented in `plot_human_stability_analysis()`, this method uses **adaptive sampling**: for each sample percentage, bootstrap iterations continue until the acceptance rate converges (split-half difference < threshold) rather than using fixed iteration counts.
+
+**What is being measured (core idea):** how often a **random judge** looks “human-like” at different sample sizes.  
+This is a *power / sanity-check*: with enough data, a random judge should be reliably rejected.
 
 #### **How It Works**
 For each percentage of sampled data (5%, 10%, …, 100%):
 1. Bootstrap-sample that percentage of rows
 2. Compute human–human and random-judge–human disagreements
-3. Run MWU test (accepted if p > 0.05)
-4. Repeat until split-half acceptance rates converge or max_iterations reached
+3. Run a one-sided Mann–Whitney U test (`alternative="greater"`) comparing **Random–Human** vs **Human–Human** disagreements  
+4. Record a boolean decision for that iteration: **accepted** if *p* > 0.05 (fail to reject “random is worse”), otherwise rejected  
+5. Repeat until split-half acceptance rates converge (see below) or `max_iterations` is reached
+
+**Acceptance rate (y-axis):**  
+Plain text: `acceptance_rate = count(p_val > 0.05) / iterations`  
+Math: $acceptance\_rate = \frac{\#\{p\_val > 0.05\}}{\text{iterations}}$  
+Important: “accepted” here means **fail-to-reject**, not “proven human-like”.
+
+
+**Convergence (adaptive sampling):**  
+After `min_iterations`, the method checks every `check_interval` iterations whether the acceptance rate stabilized by splitting decisions into two halves and stopping when \(|mean_A - mean_B|\) falls below the effective threshold (absolute or relative via `relative_convergence`).
+
+**What this test checks:**  
+It checks whether the **random judge** tends to disagree with humans **more** than humans disagree with each other (one-sided MWU with `alternative="greater"`).
+
+**What you can conclude (and what you can’t):**
+- If the random judge is rejected more as sample size increases (acceptance rate goes down), the test has **power** at your dataset size, and the human ratings contain enough signal to distinguish “random” from “human-like”.
+- This does **not** prove humans are “objective” in an absolute sense.
+- It only indicates humans are **more self-consistent than a random rater**, and the dataset/test setup is usable for benchmarking LLM judges.
+
+**What counts as “enough data” here (practical criterion):**
+- You have “enough” data when, at high sample sizes (typically near **100%** of your dataset), the random judge is **consistently rejected** (acceptance rate is low) and the estimate **converges** (few/no red points).
+- If acceptance stays high even at ~100%, the test has low power for this dataset/task (e.g., too few items, many missing ratings, humans very noisy, or the rating scale is too coarse), so “LLM is good enough” conclusions should be treated cautiously.
+
+**Important nuance:** increasing the sampled percentage does not necessarily make humans “agree more” (Human–Human disagreement can stay high if the task is subjective). What improves with more data is that the **estimate becomes less noisy** and the MWU test gains **power**, so rejection/acceptance outcomes become more stable.
+
+**Why percentages > 100% can still be run (and how to interpret them):**
+- The method uses **bootstrap sampling with replacement**, so asking for more than 100% simply means drawing **more rows with duplicates** (an “effective sample size” larger than the dataset).
+- This can be useful as a *sensitivity check* for “what would happen if we had more observations from the same underlying process”.
+- But it does **not** create new information: it can make the test look artificially more confident, so it should not be interpreted as equivalent to collecting more real, independent data.
+- If acceptance only approaches ~0 when going above 100%, that suggests **more real (independent) data would likely help**, but the main “do we have enough data?” call should still be judged by behavior near **~100%** plus convergence.
 
 #### **What the Plot Shows**
 - **X-axis:** Percentage of the dataset sampled
@@ -316,7 +318,7 @@ For each percentage of sampled data (5%, 10%, …, 100%):
 
 ---
 
-### ***Seed Sensitivity Analysis***
+### 5. Seed Sensitivity Analysis
 
 Results can vary across different random initializations. The **Seed Sensitivity Analysis** tests how robust conclusions are across multiple seeds.
 
@@ -341,3 +343,27 @@ Implemented in `plot_human_stability_seed_robustness(n_seeds)`, this method:
 | Low convergence % (orange annotation) | That sample size is noisy/difficult |
 
 > **In essence:** This analysis confirms whether your stability conclusions hold regardless of which random seed you happened to use.
+
+## Repository structure
+
+```text
+LLM-AS-A-JUDGE-GOOD-ENOUGH
+│
+├── README.md
+├── requirements.txt
+├── __init__.py
+│
+├── core/                          # Main library code
+│   ├── llm_as_a_judge/            # LLM inference module
+│   │   ├── inference.py
+│   │   └── llm_as_a_judge.py
+│   └── llm_good_enough/           # Evaluation framework
+│       ├── __init__.py
+│       ├── evaluator.py
+│       └── example.ipynb
+│
+├── benchmarks/                    # Datasets + analysis notebooks
+├── diagrams/                      # Methodology diagrams (mermaid/, svg/)
+├── docs/                          # Extended documentation
+└── scripts/                       # Utilities (GIF generation, diagram rendering)
+```

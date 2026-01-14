@@ -1,20 +1,24 @@
 flowchart TD
-    A[***Input Data***:<br/>Human Scores & LLM Scores] --> B[***Step 1***:<br/>Compute Inter-Human<br/>Disagreement<br/>Pairwise absolute differences]
-    A --> C[***Step 2***:<br/>Compute<br/>Human-LLM Disagreement<br/>Absolute differences]
-    A --> D[***Step 4***:<br/>Establish<br/>Random Baseline<br/>Uniform random scores]
-    
-    B --> E[Distribution of<br/>Human-Human Disagreements]
-    C --> F[Distribution of<br/>Human-LLM Disagreements]
-    D --> G[Distribution of<br/>Random-Human Disagreements]
-    
-    E --> H[***Step 3***:<br/>Statistical Comparison<br/>Mann-Whitney U Test]
-    F --> H
-    G --> H
-    
-    H --> I{***Is p-value ≥ 0.05?***}
-    I -->|***Yes***| J[LLM is ***'Good Enough'***<br/>Within human variability]
-    I -->|***No***| K[LLM is **NOT** ***'Good Enough'***<br/>Significantly diverges<br/>from humans]
-    
+    A["Input Data:<br/>Human scores (>= 2 per item) & LLM scores"] --> B["Step 1:<br/>Compute Human-Human disagreements<br/>All pairwise abs(h_i - h_j) per item"]
+    A --> C["Step 2:<br/>Compute LLM-Human disagreements<br/>All abs(h_i - llm) per item"]
+    A --> D["Step 3:<br/>Establish Random Baseline<br/>Uniform random scores (min..max)"]
+
+    B --> E["Distribution of<br/>Human-Human disagreements"]
+    C --> F["Distribution of<br/>LLM-Human disagreements"]
+    D --> G["Distribution of<br/>Random-Human disagreements"]
+
+    E --> H1["Step 4:<br/>Statistical test (MWU, one-sided)<br/>Compare LLM-Human vs Human-Human<br/>H1: LLM-Human > Human-Human"]
+    F --> H1
+
+    H1 --> I{"LLM p-value >= 0.05?"}
+    I -->|"Yes"| J["LLM is 'Good Enough'<br/>No evidence it diverges<br/>more than humans do"]
+    I -->|"No"| K["LLM is NOT 'Good Enough'<br/>Diverges more than humans<br/>(statistically significant)"]
+
+    %% Optional sanity check: random judge should be rejected with enough data
+    E --> H2["Sanity check (optional):<br/>MWU test Random-Human vs Human-Human<br/>Expect p < 0.05 with enough data"]
+    G --> H2
+
     style J fill:#90EE90
     style K fill:#FFB6C1
-    style H fill:#87CEEB
+    style H1 fill:#87CEEB
+    style H2 fill:#FFE4B5
