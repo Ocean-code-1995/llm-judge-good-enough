@@ -1371,7 +1371,7 @@ class LLMGoodEnough:
         convergence_threshold: float,
         relative_convergence: bool,
         seed: int,
-    ) -> tuple[int, float, float, bool, int]:
+    ) -> tuple[int, float, float, float, float, bool, int]:
         """
         Compute LLM acceptance-rate stability + effect size (Δ mean) for one sample percentage.
 
@@ -1452,7 +1452,9 @@ class LLMGoodEnough:
 
         mean_acceptance = float(np.mean(decisions)) if decisions else np.nan
         mean_delta = float(np.mean(deltas)) if deltas else np.nan
-        return p, mean_acceptance, mean_delta, converged, iteration_count
+        p10_delta = float(np.nanpercentile(deltas, 10)) if deltas else np.nan
+        p90_delta = float(np.nanpercentile(deltas, 90)) if deltas else np.nan
+        return p, mean_acceptance, mean_delta, p10_delta, p90_delta, converged, iteration_count
 
     def _run_percentage_loop_llm(
         self,
@@ -1461,7 +1463,7 @@ class LLMGoodEnough:
         parallel: bool,
         n_jobs: int | None,
         **worker_kwargs,
-    ) -> list[tuple[int, float, float, bool, int]]:
+    ) -> list[tuple[int, float, float, float, float, bool, int]]:
         """
         Execute LLM stability analysis across all sample percentages.
         """
@@ -1771,7 +1773,7 @@ class LLMGoodEnough:
             seed=self.seed,
         )
 
-        perc, acc, delta, conv, iters = zip(*results)
+        perc, acc, delta, delta_p10, delta_p90, conv, iters = zip(*results)
 
         import matplotlib.pyplot as plt
         from matplotlib.lines import Line2D
@@ -1791,7 +1793,7 @@ class LLMGoodEnough:
             zorder=1,
         )
 
-        for p_val, a, _delta, c, n_iter in results:
+        for p_val, a, _delta, _p10, _p90, c, n_iter in results:
             color = "springgreen" if c else "orangered"
             ax1.scatter(
                 p_val, a,
@@ -1877,6 +1879,17 @@ class LLMGoodEnough:
             zorder=1,
         )
 
+        # Show variability band (10th–90th percentile) across bootstrap runs
+        ax2.fill_between(
+            perc,
+            delta_p10,
+            delta_p90,
+            alpha=0.2,
+            color="steelblue",
+            label="P10–P90 of Δ across bootstrap runs",
+            zorder=0,
+        )
+
         for p_val, d, c in zip(perc, delta, conv):
             color = "springgreen" if c else "orangered"
             ax2.scatter(
@@ -1892,13 +1905,14 @@ class LLMGoodEnough:
         ax2.set_title("Δ Mean Disagreement vs Sample Size", fontsize=18, fontweight="bold")
         ax2.set_xlabel("Percentage of Data Sampled", fontsize=14, fontweight="bold")
         ax2.set_ylabel(
-            r"$\boldsymbol{\Delta} = \mathbf{mean}(|LLM-H|) - \mathbf{mean}(|H_i-H_j|)$",
+            r"$\boldsymbol{\Delta} = \mathbf{mean}\!\left(\left|\mathbf{LLM}-\mathbf{H}\right|\right) - \mathbf{mean}\!\left(\left|\mathbf{H}_{\mathbf{i}}-\mathbf{H}_{\mathbf{j}}\right|\right)$",
             fontsize=14,
             fontweight="bold",
         )
         ax2.tick_params(axis="both", which="major", labelsize=12)
         ax2.set_xlim(min(perc) - 3, max(perc) + 3)
         ax2.grid(alpha=0.3)
+        ax2.legend(loc="best", fontsize=11, edgecolor="black", facecolor="white", framealpha=1)
 
         fig.suptitle(f"LLM Stability Analysis — {self._clean_model_name(llm_col)}", fontsize=20, fontweight="bold")
         plt.tight_layout()
