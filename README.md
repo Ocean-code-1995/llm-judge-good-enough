@@ -345,11 +345,17 @@ This section corresponds to `plot_llm_stability_analysis(llm_col)`.
 **Outputs (two-panel figure):**
 - **Panel A — Acceptance rate vs sample %**: how often the LLM is “accepted” (p > 0.05) across bootstrap iterations at each sample size.
 - **Panel B — Δ mean disagreement vs sample %**:  
-  \(\Delta = mean(LLM\text{–}Human) - mean(Human\text{–}Human)\).
+  Plain text: `Δ = mean(|LLM - H|) - mean(|H_i - H_j|)`  
+  Math: $\\Delta = \\mathrm{mean}(|LLM-H|) - \\mathrm{mean}(|H_i-H_j|)$
 
 **Interpretation (rule of thumb):**
 - Acceptance stays high near ~100% **and** Δ stays near 0 → robustly “good enough”.
 - Acceptance drops as sample size increases (often with Δ > 0) → small-sample acceptance was likely due to low power; the LLM is not robustly human-like.
+
+**How to read Δ:**
+- **Δ ≈ 0**: LLM deviations are about the same magnitude as human–human variability (good sign).
+- **Δ > 0**: LLM disagrees more than humans disagree with each other (practically worse).
+- **Δ < 0**: LLM is more “consistent” than humans (not automatically better; could be overly conservative).
 
 ---
 
