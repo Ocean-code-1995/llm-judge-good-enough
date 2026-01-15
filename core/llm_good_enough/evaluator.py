@@ -1891,7 +1891,11 @@ class LLMGoodEnough:
         ax2.axhline(0.0, linestyle="-.", color="black", alpha=0.7)
         ax2.set_title("Δ Mean Disagreement vs Sample Size", fontsize=18, fontweight="bold")
         ax2.set_xlabel("Percentage of Data Sampled", fontsize=14, fontweight="bold")
-        ax2.set_ylabel("Δ Mean (LLM–Human − Human–Human)", fontsize=14, fontweight="bold")
+        ax2.set_ylabel(
+            r"$\boldsymbol{\Delta} = \mathbf{mean}(|LLM-H|) - \mathbf{mean}(|H_i-H_j|)$",
+            fontsize=14,
+            fontweight="bold",
+        )
         ax2.tick_params(axis="both", which="major", labelsize=12)
         ax2.set_xlim(min(perc) - 3, max(perc) + 3)
         ax2.grid(alpha=0.3)
