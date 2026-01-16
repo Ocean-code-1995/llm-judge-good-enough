@@ -193,9 +193,14 @@ It allows quick visual comparison across several LLMs to identify which behave m
 
 
 ### 3. Robustness Visualization
+
 This section corresponds to `plot_monte_carlo_robustness()` and `plot_monte_carlo_robustness_multi()` in `core/llm_good_enough/evaluator.py`.
 
-**What is randomized (important):** the Monte Carlo simulation repeatedly samples **fresh random judges**. The selected LLM’s disagreements are computed once from your data and shown as a fixed reference point (or multiple fixed points in the multi-LLM version).
+**What is randomized (important):**  
+The Monte Carlo simulation repeatedly samples **fresh random judges**,  
+where each Monte Carlo iteration corresponds to a *new item-wise random scoring function*  
+(i.e., a new hypothetical random judge assigning scores independently to each item).
+
 
 **For each Monte Carlo draw (one random judge), two values are recorded:**
 - The **Δ mean disagreement** = mean(Random–Human) − mean(Human–Human)  
@@ -220,7 +225,9 @@ It’s a **sanity check**: with enough information, random judges should mostly 
 #### **Panel (B) — Δ Mean Disagreement Distribution**
 **How it’s computed:**  
 For each run, compute the Δ mean disagreement for the **random judge** relative to humans:  
-\(\Delta = \mathbb{E}[|R - H|] - \mathbb{E}[|H_i - H_j|]\).  
+
+$\Delta = \mathbb{E}\!\left[\,|R - H|\,\right] - \mathbb{E}\!\left[\,|H_i - H_j|\,\right]$
+
 The implementation uses a split-half diagnostic (first half vs second half) via KDE to check Monte Carlo stability.  
 
 **Interpretation:**  
