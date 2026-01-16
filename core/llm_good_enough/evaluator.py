@@ -6,6 +6,7 @@ from itertools import combinations
 from typing import Optional
 from scipy.stats import mannwhitneyu
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 sns.set_theme(style="whitegrid")
 from joblib import Parallel, delayed
@@ -18,12 +19,29 @@ class LLMGoodEnough:
     """
     Is your selected LLM-as-a-judge good enough?
 
-    This class evaluates whether an LLM's performance is "good enough" 
-    and hence suitbale for automated evaluation tasks of other LLM generated outputs. 
-    It achieves this by creating two arrays of absolute differences between inter-human 
-    judgements as well as LLM-human judgements. Finally, LLM-human judgements are then compared 
-    to the inter-human judgements using a Mann-Whitney U test in order to determine 
-    if the selected candidate LLM is good enough.
+    This class evaluates whether an LLM's performance is "good enough" and hence
+    suitable for automated evaluation tasks of other LLM-generated outputs.
+    It does so by comparing absolute disagreement distributions between:
+
+        - Human–Human judgments (diversity of opinion)
+        - LLM–Human judgments
+
+    These distributions are compared using a one-sided Mann–Whitney U test to
+    assess whether the LLM deviates more from humans than humans deviate from
+    each other.
+
+    Randomness & Reproducibility
+    ----------------------------
+    All Monte Carlo and stability analyses in this class use NumPy's
+    `np.random.default_rng` with explicitly managed RNG streams. We intentionally
+    avoid `np.random.randint` and other global RNG calls in order to ensure:
+
+        - reproducibility across runs given a fixed seed
+        - independence of Monte Carlo draws (fresh random judges per iteration)
+        - deterministic behavior under parallel execution
+
+    Each sample size (percentage) is assigned its own RNG stream derived from
+    the base seed, guaranteeing parallel-safe and reproducible results.
 
     Corresponding paper: https://arxiv.org/abs/--->>>ToBeAnnounced<<<---
 
@@ -104,54 +122,48 @@ class LLMGoodEnough:
 
     def _set_global_seed(self, seed: int) -> None:
         """
-        Apply the seed globally for deterministic behavior.
+        Set *global/legacy* RNG seeds for reproducibility.
+
+        Notes
+        -----
+        - Seeds NumPy's legacy global RNG (`np.random.*`) and Python's `random`.
+        - This does NOT affect `np.random.default_rng(...)` generators.
+        - All Monte Carlo and stability analyses intentionally use local
+        `default_rng` streams instead of `np.random.randint` to ensure:
+            * reproducibility across runs
+            * independence of draws
+            * parallel-safe execution
         """
         np.random.seed(seed)
         random.seed(seed)
 
-
-    def reseed(self, new_seed: int | None = None) -> None:
-        """
-        Reseed the RNGs mid-session. If no seed provided, generate a new one.
-        """
-        self.seed = self._init_seed(new_seed)
-        self._set_global_seed(self.seed)
-        if self.verbosity > 0:
-            print(f"🔁 RNGs reseeded with: {self.seed}")
-
     
-    def _reseed_and_refresh(self) -> None:
+    def init_random_judge(
+        self,
+        min_score: int,
+        max_score: int,
+        seed: int | None = None
+    ) -> np.ndarray:
         """
-        Reseed the RNGs and refresh the random judge column in-place.
-        This is used for repeated randomization analyses without re-instantiating the class.
-        """
-        self.reseed(None)
-        self.df["RANDOM_as_a_judge"] = self.init_random_judge(
-            min_score=self.min_score,
-            max_score=self.max_score
-        )
-    
-    def init_random_judge(self, min_score: int, max_score: int, seed: int = 42) -> np.ndarray:
-        """
-        Initialize a random judge as a comparison to the LLM-human judgements. The random judge
-        is initialized with a random integer between the minimum and maximum value.
+        Create a baseline random judge column.
 
-        Parameters
-        ----------
-        min_score : int
-            Minimum value for the random judge.
-        max_score : int
-            Maximum value for the random judge.
+        Important design choice
+        -----------------------
+        - If `seed` is None: use the instance seed (`self.seed`) so the baseline column
+        is deterministic and reproducible for a fixed evaluator instance.
+        - If `seed` is provided: override the instance seed for explicit control.
 
-        Returns
-        -------
-        np.ndarray
-            Array of random integers between the minimum and maximum value.
+        Note
+        ----
+        This baseline column is mainly used for *static* plots (histograms/bar plots).
+        For Monte Carlo / stability analyses we generate "fresh random judges"
+        inside the loops, NOT by mutating this column.
         """
-        rng = np.random.default_rng(self.seed)
-        return rng.integers(
-            min_score, max_score + 1, size=len(self.df)
-        )
+        use_seed = self.seed if seed is None else int(seed)
+        rng = np.random.default_rng(use_seed)
+        return rng.integers(min_score, max_score + 1, size=len(self.df))
+
+
 
     def _validate_human_columns(self) -> None:
         """
@@ -238,67 +250,91 @@ class LLMGoodEnough:
 
 
     # ~~~~~~~~~~~~~~~ CORE COMPUTATION METHODS (PUBLIC) ~~~~~~~~~~~~~~~
-    def compute_human_disagreements(self) -> np.ndarray:
+    def compute_human_disagreements(self, df: pd.DataFrame | None = None) -> np.ndarray:
         """
-        Vectorized computation of all available pairwise absolute differences 
-        between human raters per case.
+        Compute the Human–Human disagreement distribution.
+
+        Parameters
+        ----------
+        df : pd.DataFrame or None
+            If provided, compute disagreements on this dataframe.
+            If None, uses `self.df`.
 
         Returns
         -------
         np.ndarray
-            Flattened array of all pairwise absolute disagreements.
-        """
+            Flattened array of absolute pairwise disagreements between humans:
+            for each row, for all human pairs (i < j): |H_i - H_j|.
 
-        diffs = []
-        for _, row in self.df[self.human_cols].iterrows():
-            # extract non-nan values
+        Why this exists
+        ---------------
+        Many analyses (e.g., Monte Carlo, stability) operate on *subsamples* of the data.
+        Passing `df` avoids accidental use of the full `self.df` when you intended to use
+        a sampled dataframe. It also keeps functions pure and testable.
+        """
+        df_use = self.df if df is None else df
+
+        diffs: list[float] = []
+        for _, row in df_use[self.human_cols].iterrows():
             vals = row.dropna().to_numpy()
-            # only compute if at least 2 values (raters) are present
             if len(vals) >= 2:
-                # upper triangle pairwise differences
+                # upper triangle pairwise abs differences (avoid double counting)
                 diffs.extend(
                     np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
                 )
+
         if not diffs:
-            raise ValueError(
-                "❌ No valid human-human pairs found (check your input data)."
-            )
-        return np.array(diffs)
+            raise ValueError("❌ No valid human-human pairs found (check input data / missingness).")
+
+        return np.asarray(diffs, dtype=float)
 
 
-    def compute_llm_human_disagreements(self, llm_col: str) -> np.ndarray:
+
+    def compute_llm_human_disagreements(
+        self,
+        llm_col: str,
+        df: pd.DataFrame | None = None,
+    ) -> np.ndarray:
         """
-        Compute absolute differences between LLM and all available human judges per case.
+        Compute the LLM–Human disagreement distribution.
 
         Parameters
         ----------
         llm_col : str
-            Column name for the LLM judge.
+            Column name of the LLM judge.
+        df : pd.DataFrame or None
+            If provided, compute disagreements on this dataframe.
+            If None, uses `self.df`.
 
         Returns
         -------
         np.ndarray
-            Flattened array of LLM-human absolute disagreements.
+            Flattened array of absolute differences for all available pairs:
+            |LLM - H_j| for each row and each non-missing human rating H_j.
+
+        Notes
+        -----
+        - Missing human ratings are ignored (pair simply doesn't exist).
+        - Missing LLM rating on a row -> row contributes nothing.
         """
-        if llm_col not in self.df.columns:
+        df_use = self.df if df is None else df
+
+        if llm_col not in df_use.columns:
             raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
 
-        diffs = []
-        # iterate over each row
-        for _, row in self.df[[llm_col] + self.human_cols].iterrows():
-            # extract LLM value
+        diffs: list[float] = []
+        for _, row in df_use[[llm_col] + self.human_cols].iterrows():
             llm_val = row[llm_col]
-            # only compute if LLM value is not nan
             if pd.notna(llm_val):
-                vals = row[self.human_cols].dropna().to_numpy()
-                diffs.extend(
-                    np.abs(vals - llm_val)
-                )
+                human_vals = row[self.human_cols].dropna().to_numpy()
+                if len(human_vals):
+                    diffs.extend(np.abs(human_vals - llm_val))
+
         if not diffs:
-            raise ValueError(
-                "❌ No valid LLM-human pairs found (check for missing ratings)."
-            )
-        return np.array(diffs)
+            raise ValueError("❌ No valid LLM-human pairs found (check missing ratings).")
+
+        return np.asarray(diffs, dtype=float)
+
 
 
     def compute_all_llm_disagreements(self) -> dict:
@@ -483,6 +519,14 @@ class LLMGoodEnough:
             mean_human = round(np.mean(human_human_disagreements), 2)
             std_human = round(np.std(human_human_disagreements), 2)
             p_val = self.run_mannwhitneyu_test(data, human_human_disagreements)
+
+            # counts (how many samples in each distribution)
+            n_blue = int(len(human_human_disagreements))   # human-human
+            n_red  = int(len(data))                        # model-human
+
+            if self.verbosity >= 2:
+                print(f"[{display_name}] n_blue(HH)={n_blue:,} | n_red(MH)={n_red:,} | p={p_val:.4g}")
+
 
             # Plot human-human
             ax.hist(
@@ -670,28 +714,81 @@ class LLMGoodEnough:
         iterations: int,
         min_score: int,
         max_score: int,
-        human_dis: np.ndarray,
+        df_items: pd.DataFrame,
+        human_cols: list[str],
     ) -> pd.DataFrame:
         """
-        INTERNAL:
-        Runs Monte-Carlo simulation of random judges and returns a DataFrame with
-        columns:
-            - delta_mean
-            - p_value
+        INTERNAL: Monte-Carlo simulation of *fresh random judges*.
+
+        Concept
+        -------
+        We generate a new random judge per Monte Carlo iteration by drawing one random rating
+        per item from a single RNG stream (seeded with `self.seed`). This is reproducible
+        and equivalent to sampling "fresh judges" each iteration.
+
+        For each iteration:
+        1) Draw one random rating per item (row): R_i
+        2) Compute Random–Human disagreements: |R_i - H_ij| for all non-missing H_ij
+        3) Compute effect size: delta_mean = mean(Random–Human) - mean(Human–Human)
+        4) Compute one-sided MWU p-value for Random–Human > Human–Human
+
+        Parameters
+        ----------
+        iterations : int
+            Number of Monte Carlo draws (random judges).
+        min_score, max_score : int
+            Score range for the random judge (inclusive).
+        df_items : pd.DataFrame
+            The item-level dataframe to use (can be full dataset or a subset).
+        human_cols : list[str]
+            Human rating columns.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns:
+            - delta_mean : float
+            - p_value    : float
         """
+        # Single RNG stream seeded with `self.seed`.
+        # Each call to `rng.integers` produces a fresh random judge,
+        # while keeping the full Monte Carlo simulation reproducible.
         rng = np.random.default_rng(self.seed)
-        results = np.empty((iterations, 2))
+        results = np.empty((iterations, 2), dtype=float)
+
+        # ✅ IMPORTANT: baseline must match df_items (not self.df)
+        human_human_dis = self.compute_human_disagreements(df=df_items)
+        mean_hh = float(np.mean(human_human_dis))
+
+        # Cache human matrix for vectorized disagreement computation
+        human_matrix = df_items[human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
+        n_items = human_matrix.shape[0]
 
         for i in range(iterations):
-            random_ratings = rng.integers(min_score, max_score + 1, size=len(human_dis))
-            random_dis = np.abs(random_ratings - human_dis)
+            # 1) Fresh random rating per item (this is the "fresh random judge")
+            r = rng.integers(min_score, max_score + 1, size=n_items).astype(float)  # (n_items,)
 
-            delta = np.mean(random_dis) - np.mean(human_dis)
-            p_val = mannwhitneyu(random_dis, human_dis, alternative="greater").pvalue
+            # 2) Random–Human disagreements for all non-missing humans
+            diffs = np.abs(human_matrix - r[:, None])          # (n_items, n_humans)
+            random_human_dis = diffs[~np.isnan(human_matrix)]  # flatten valid entries only
+
+            if random_human_dis.size == 0:
+                results[i] = (np.nan, np.nan)
+                continue
+
+            # 3) Effect size
+            delta = float(np.mean(random_human_dis) - mean_hh)
+
+            # 4) Significance test
+            p_val = float(
+                mannwhitneyu(random_human_dis, human_human_dis, alternative="greater").pvalue
+            )
 
             results[i] = (delta, p_val)
 
         return pd.DataFrame(results, columns=["delta_mean", "p_value"])
+
+
 
     def _split_half(self, arr: np.ndarray):
         """
@@ -782,6 +879,90 @@ class LLMGoodEnough:
 
         plt.tight_layout()
         return fig
+    
+
+
+
+    def _is_orangeish(self, color: str, threshold: float = 0.20) -> bool:
+        rgb = np.array(mcolors.to_rgb(color))
+        oranges = [
+            np.array(mcolors.to_rgb("orange")),
+            np.array(mcolors.to_rgb("orangered")),
+        ]
+        return any(np.linalg.norm(rgb - o) < threshold for o in oranges)
+
+
+
+    def _make_llm_style_map(self, llm_names: list[str]) -> dict[str, dict]:
+        """
+        Assign styles so that:
+        1) Initially: all markers AND colors are unique
+        2) Colors are never reused until necessary
+        3) Orange-like colors are excluded
+        4) No identical (marker, color) pair can occur
+        """
+
+        # --- Strong, clearly distinguishable markers ---
+        markers = ["X", "o", "s", "D", "^", "v", "P", "*", "<", ">", "h", "H", "p", "8"]
+
+        # --- Start with high-quality categorical palettes ---
+        colors = list(mcolors.TABLEAU_COLORS.values())
+        colors += [mcolors.to_hex(c) for c in plt.get_cmap("tab20").colors]
+
+        # Remove orange-like colors
+        colors = [c for c in colors if not self._is_orangeish(c)]
+
+        style_map = {}
+        used_colors = set()
+        used_pairs = set()
+
+        # =========================
+        # Phase 1: unique marker + unique color
+        # =========================
+        for name, marker, color in zip(llm_names, markers, colors):
+            style_map[name] = {"marker": marker, "color": color}
+            used_colors.add(color)
+            used_pairs.add((marker, color))
+
+        remaining = llm_names[len(style_map):]
+
+        # =========================
+        # Phase 2: reuse markers, still unique colors
+        # =========================
+        color_pool = [c for c in colors if c not in used_colors]
+        marker_idx = 0
+
+        for name in remaining:
+            if not color_pool:
+                break
+            marker = markers[marker_idx % len(markers)]
+            color = color_pool.pop(0)
+
+            style_map[name] = {"marker": marker, "color": color}
+            used_pairs.add((marker, color))
+            used_colors.add(color)
+            marker_idx += 1
+
+        remaining = llm_names[len(style_map):]
+
+        # =========================
+        # Phase 3: last resort (reuse colors + markers)
+        # =========================
+        if remaining:
+            for name in remaining:
+                for marker in markers:
+                    for color in colors:
+                        if self._is_orangeish(color):
+                            continue
+                        if (marker, color) not in used_pairs:
+                            style_map[name] = {"marker": marker, "color": color}
+                            used_pairs.add((marker, color))
+                            break
+                    if name in style_map:
+                        break
+
+        return style_map
+
 
     def _render_robustness_panels_multi_llm(
         self,
@@ -807,6 +988,7 @@ class LLMGoodEnough:
         """
         import seaborn as sns
         import matplotlib.pyplot as plt
+        import itertools
 
         sns.set_theme(style="whitegrid", font_scale=1.2)
         fig, axes = plt.subplots(1, 3, figsize=(22, 6))
@@ -847,24 +1029,30 @@ class LLMGoodEnough:
 
         # ----- Panel C: Monte Carlo Cloud + Multiple LLMs -----
         sns.scatterplot(
-            data=df_mc, x="delta_mean", y="p_value",
-            alpha=0.3, s=100, color="orangered", ax=axes[2],
+            data=df_mc, 
+            x="delta_mean",
+            y="p_value",
+            alpha=0.3,
+            s=100,
+            color="orangered", ax=axes[2],
             label=f"Random judges\n(n={iterations:,})"
         )
 
-        # Color palette for multiple LLMs
-        llm_colors = ["#2ecc71", "#3498db", "#9b59b6", "#e74c3c", "#f39c12", "#1abc9c"]
-        llm_markers = ["X", "o", "s", "D", "^", "v"]
+        llm_names = list(llm_results.keys())
+        style_map = self._make_llm_style_map(llm_names)
 
-        for idx, (llm_name, results) in enumerate(llm_results.items()):
-            color = llm_colors[idx % len(llm_colors)]
-            marker = llm_markers[idx % len(llm_markers)]
-            
+        for llm_name, results in llm_results.items():
+            style = style_map[llm_name]
+
             axes[2].scatter(
                 results["delta"], results["p_value"],
-                color=color, edgecolor="black",
-                s=180, marker=marker, linewidth=1.5,
-                label=llm_name, zorder=10
+                color=style["color"],
+                marker=style["marker"],
+                edgecolor="black",
+                s=180,
+                linewidth=1.5,
+                label=llm_name,
+                zorder=10,
             )
 
         axes[2].axhline(0.05, linestyle="--", color="black")
@@ -894,7 +1082,7 @@ class LLMGoodEnough:
         """
         Run a Monte-Carlo robustness analysis of the LLM-as-a-judge evaluation.
 
-        This procedure repeatedly re-initializes the Random Judge (via reseeding),
+        This procedure repeatedly draws fresh random ratings each iteration from one RNG stream seeded with self.seed,
         recomputes its disagreement distribution with human annotators, and evaluates:
 
         • Panel A — Stability of p-value distributions across Monte-Carlo splits  
@@ -922,16 +1110,17 @@ class LLMGoodEnough:
             Optional file path to save the resulting 3-panel figure.
         """
 
-        human_dis = self.compute_human_disagreements()
-        llm_dis = self.compute_llm_human_disagreements(llm_col)
+        llm_dis = self.compute_llm_human_disagreements(llm_col, df=self.df)
 
         df_mc = self._monte_carlo_random_judges(
             iterations=iterations,
             min_score=self.min_score,
             max_score=self.max_score,
-            human_dis=human_dis,
+            df_items=self.df,             # item-level dataframe
+            human_cols=self.human_cols,
         )
 
+        human_dis = self.compute_human_disagreements(df=self.df)
         fig = self._render_robustness_panels(
             df_mc=df_mc,
             human_dis=human_dis,
@@ -981,12 +1170,12 @@ class LLMGoodEnough:
         print(f"Samples with p ≤ 0.05: {counts['below']:,} ({counts['below_pct']:.2f}%)")
         ```
         """
-        human_dis = self.compute_human_disagreements()
         df_mc = self._monte_carlo_random_judges(
             iterations=iterations,
             min_score=self.min_score,
             max_score=self.max_score,
-            human_dis=human_dis,
+            df_items=self.df,
+            human_cols=self.human_cols,
         )
 
         total = len(df_mc)
@@ -1070,8 +1259,10 @@ class LLMGoodEnough:
             iterations=iterations,
             min_score=self.min_score,
             max_score=self.max_score,
-            human_dis=human_dis,
+            df_items=self.df,
+            human_cols=self.human_cols,
         )
+
 
         # Compute results for each LLM
         llm_results = {}
@@ -1216,7 +1407,19 @@ class LLMGoodEnough:
             - converged: whether the simulation converged before max_iterations
             - n_iterations: total number of iterations performed
         """
-        # Unique seed per percentage ensures reproducibility while allowing parallelism
+        # RNG stream is fixed per (seed, percentage) for reproducibility.
+        # IMPORTANT: Each loop iteration represents ONE Monte Carlo draw:
+        #   (1) bootstrap-sample items
+        #   (2) generate a FRESH random judge (new pseudo_vals vector)
+        # This means: within one percentage p we create a new random judge per iteration,
+        # rather than re-using a single fixed RANDOM_as_a_judge column.
+        #
+        # We intentionally use `default_rng` instead of `np.random.randint`
+        # so that:
+        #   - each iteration draws an independent random judge
+        #   - results are reproducible across runs
+        #   - parallel execution does not affect randomness
+
         rng = np.random.default_rng(seed + p)
         n_rows = max(1, int(len(df) * (p / 100)))
 
@@ -1250,7 +1453,8 @@ class LLMGoodEnough:
                 continue
 
             # --- 3) Generate random judge and compute disagreements ---
-            # Fresh random ratings each iteration (uniform within score range)
+            # Fresh random judge each iteration: one random rating per sampled item.
+            # (uniform within score range)
             pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=len(sample))
             
             pseudo_dis = []
@@ -1276,9 +1480,15 @@ class LLMGoodEnough:
 
             # --- 5) Periodic convergence check ---
             if iteration_count >= min_iterations and iteration_count % check_interval == 0:
-                half = len(decisions) // 2
-                mean_A = np.mean(decisions[:half])
-                mean_B = np.mean(decisions[half:])
+                decisions_arr = np.asarray(decisions, dtype=float)
+                half = len(decisions_arr) // 2
+
+                # Guard: need at keastb 2 decisions to split meaningfully
+                if half == 0:
+                    continue
+
+                mean_A = float(np.mean(decisions_arr[:half]))
+                mean_B = float(np.mean(decisions_arr[half:]))
 
                 if self._has_converged(
                     mean_A,
@@ -1437,9 +1647,15 @@ class LLMGoodEnough:
 
             # --- 5) Convergence check (split-half acceptance rate) ---
             if iteration_count >= min_iterations and iteration_count % check_interval == 0:
-                half = len(decisions) // 2
-                mean_A = np.mean(decisions[:half])
-                mean_B = np.mean(decisions[half:])
+                decisions_arr = np.asarray(decisions, dtype=float)
+                half = len(decisions_arr) // 2
+
+                # Guard: need at least 2 decisions to split meaningfully
+                if half == 0:
+                    continue
+
+                mean_A = float(np.mean(decisions_arr[:half]))
+                mean_B = float(np.mean(decisions_arr[half:]))
 
                 if self._has_converged(
                     mean_A,
@@ -1491,7 +1707,7 @@ class LLMGoodEnough:
 
     def plot_human_stability_analysis(
         self,
-        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+        percentages: list[int] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
         min_iterations: int = 200,
         max_iterations: int = 10_000,
         check_interval: int = 100,
@@ -1727,7 +1943,7 @@ class LLMGoodEnough:
     def plot_llm_stability_analysis(
         self,
         llm_col: str,
-        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+        percentages: list[int] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
         min_iterations: int = 200,
         max_iterations: int = 10_000,
         check_interval: int = 100,
@@ -1905,7 +2121,7 @@ class LLMGoodEnough:
         ax2.set_title("Δ Mean Disagreement vs Sample Size", fontsize=18, fontweight="bold")
         ax2.set_xlabel("Percentage of Data Sampled", fontsize=14, fontweight="bold")
         ax2.set_ylabel(
-            r"$\boldsymbol{\Delta} = \mathbf{mean}\!\left(\left|\mathbf{LLM}-\mathbf{H}\right|\right) - \mathbf{mean}\!\left(\left|\mathbf{H}_{\mathbf{i}}-\mathbf{H}_{\mathbf{j}}\right|\right)$",
+            "Relative Disagreement (LLM vs Humans)",
             fontsize=14,
             fontweight="bold",
         )
@@ -1925,270 +2141,6 @@ class LLMGoodEnough:
         plt.show()
 
 
-
-
-    def plot_human_stability_analysis_old_version(
-        self,
-        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-        min_iterations: int = 200,
-        max_iterations: int = 10000,
-        check_interval: int = 100,
-        convergence_threshold: float = 0.01,
-        relative_convergence: bool = True,
-        save_path: str | None = None,
-        show_iteration_counts: bool = True,
-    ) -> None:
-        """
-        Test how stable acceptance rates are across different sample sizes.
-        
-        Uses **adaptive sampling**: iterates until the acceptance rate converges 
-        (split-half difference < threshold) rather than fixed iteration counts.
-        This is statistically sound because smaller samples (noisier) automatically
-        get more iterations, while larger samples stop early once stable.
-
-        Reasoning:
-        ---------
-           - Smaller sample percentages (e.g., 5%) are inherently noisier and may need more iterations to stabilize.
-           - Larger percentages converge faster, so we're wasting compute with fixed iterations
-           - Showing iteration counts provides insight into the "difficulty" of each sample size
-
-        **Algorithm:**
-            For each percentage p:
-                1. Bootstrap-sample p% of rows
-                2. Generate a fresh random judge (new random ratings each iteration)
-                3. Compute human–human and random-judge–human disagreements
-                4. Run MWU test (accepted if p > 0.05)
-                5. Repeat until split-half acceptance rates converge or max_iterations
-        
-        **Acceptance rate** 
-           = number of times the random judge is accepted as human-like / total number of iterations
-        
-        **Plot shows:**
-            - X-axis: sample percentage, Y-axis: acceptance rate
-            - Green scatter = converged, Red = max iterations reached
-            - Annotations show iteration counts (reveals "difficulty" per sample size)
-
-        **Interpretation:**
-            The MWU test gains statistical power as sample size increases.
-            - Small samples (5-10%): High acceptance rate → not enough power to detect 
-              that random is worse than humans (Type II error / false negative).
-            - Large samples (50-100%): Low acceptance rate → sufficient power to 
-              reliably reject the random judge as non-human-like.
-            
-            This is a sanity check: a random judge *should* be rejected with enough 
-            data. The downhill trend confirms the methodology is working correctly.
-        
-        **Trend patterns:**
-            - Downhill → expected for random/bad judges. Power increases, rejection reliable.
-            - Flat high (~1.0) → judge is consistently human-like across all sample sizes (good judge).
-            - Flat low (~0.0) → judge is clearly bad, rejected even with tiny samples.
-            - Uphill → suspicious, investigate data quality or methodology.
-            - Erratic (many red points) → high variance, may need more data.
-
-        Parameters
-        ----------
-        percentages : list of int
-            Percentages of data to sample.
-        min_iterations : int
-            Minimum iterations before checking convergence.
-        max_iterations : int
-            Hard cap to prevent infinite loops.
-        check_interval : int
-            Check convergence every N iterations (after min_iterations).
-        convergence_threshold : float
-            Stop when split-half difference in acceptance rate is below this.
-            Interpretation depends on `relative_convergence`:
-            - If False (absolute): threshold is a fixed value (e.g., 0.01 = 1 percentage point)
-            - If True (relative): threshold is a proportion (e.g., 0.05 = 5% of current mean)
-        relative_convergence : bool, default=True
-            Whether to use relative or absolute convergence criterion.
-            ----------------------------------------------------------------------------------
-            | **Relative (True, recommended):**                                              |
-            |    Stop when `|mean_A - mean_B| < threshold * mean(mean_A, mean_B)`.           |
-            |    Ensures proportional stability: demands tighter precision at low            |
-            |    and allows more slack at high rates (where small fluctuations matter less). |
-            |    A floor of `threshold / 10` prevents issues when mean ≈ 0.                  |
-            |--------------------------------------------------------------------------------|
-            | **Absolute (False):**                                                          |
-            |    Stop when `|mean_A - mean_B| < threshold`.                                  |
-            |    Uses a fixed precision regardless of acceptance rate.                       |
-            ----------------------------------------------------------------------------------
-        save_path : str or None
-            Path to save the figure.
-        show_iteration_counts : bool
-            Annotate iteration counts above each scatter point.
-        """
-
-        import matplotlib.pyplot as plt
-        import numpy as np
-        from scipy.stats import mannwhitneyu
-
-        # Reseed for reproducibility across repeated calls
-        self._set_global_seed(self.seed)
-        rng = np.random.default_rng(self.seed)
-
-        human_cols = self.human_cols
-        df = self.df.reset_index(drop=True)
-
-        # results: (percentage, mean_acceptance, converged_flag, n_iterations)
-        results = []
-
-        for p in percentages:
-            n_rows = max(1, int(len(df) * (p / 100)))
-            decisions = []
-            converged = False
-            iteration_count = 0
-
-            if self.verbosity > 0:
-                print(f"📊 Sampling {p}% of data ({n_rows} rows)...", end=" ")
-
-            while iteration_count < max_iterations:
-                # --- 1) Bootstrap subsample rows ---
-                sample = df.sample(n_rows, replace=True)
-
-                # --- 2) Compute human–human disagreements ---
-                human_dis = []
-                for _, row in sample[human_cols].iterrows():
-                    vals = row.dropna().to_numpy()
-                    if len(vals) >= 2:
-                        # compute upper triangle pairwise differences 
-                        # = absolute differences between all pairs of human judges (i.e. human-human disagreements)
-                        diffs = np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
-                        human_dis.extend(diffs)
-
-                human_dis = np.array(human_dis)
-                if len(human_dis) == 0:
-                    iteration_count += 1
-                    continue
-
-                # --- 3) Random-judge–human disagreements (fresh random judge each iteration) ---
-                human_matrix = sample[human_cols].to_numpy()
-                pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=len(sample))
-
-                pseudo_dis = []
-                for pj, row_vals in zip(pseudo_vals, human_matrix):
-                    row_vals = row_vals[~np.isnan(row_vals)]
-                    if len(row_vals) > 0:
-                        pseudo_dis.extend(np.abs(row_vals - pj))
-
-                pseudo_dis = np.array(pseudo_dis)
-                if len(pseudo_dis) == 0:
-                    iteration_count += 1
-                    continue
-
-                # --- 4) MWU test ---
-                p_val = mannwhitneyu(
-                    pseudo_dis, human_dis, alternative="greater"
-                ).pvalue
-
-                decisions.append(1 if p_val > 0.05 else 0)
-                iteration_count += 1
-
-                # --- 5) Check convergence periodically ---
-                if (
-                    iteration_count >= min_iterations and 
-                    iteration_count % check_interval == 0 and 
-                    len(decisions) >= min_iterations
-                ):
-                    
-                    decisions_arr = np.array(decisions)
-                    half = len(decisions_arr) // 2
-                    mean_A = decisions_arr[:half].mean()
-                    mean_B = decisions_arr[half:].mean()
-
-                    # Compute effective threshold (absolute or relative)
-                    if relative_convergence:
-                        # Relative: threshold as proportion of current mean
-                        # Floor prevents issues when mean is near zero
-                        mean_both = (mean_A + mean_B) / 2
-                        floor = convergence_threshold / 10
-                        effective_threshold = max(convergence_threshold * mean_both, floor)
-                    else:
-                        # Absolute (original behavior)
-                        effective_threshold = convergence_threshold
-
-                    if abs(mean_A - mean_B) < effective_threshold:
-                        converged = True
-                        break
-
-            # --- 6) Handle empty decisions ---
-            if len(decisions) == 0:
-                results.append((p, np.nan, False, iteration_count))
-                if self.verbosity > 0:
-                    print(f"⚠️ No valid iterations")
-                continue
-
-            mean_acceptance = np.mean(decisions)
-            results.append((p, mean_acceptance, converged, iteration_count))
-            
-            if self.verbosity > 0:
-                status = "✓ converged" if converged else "⚠ max reached"
-                print(f"{status} at {iteration_count:,} iterations (acceptance: {mean_acceptance:.3f})")
-
-        # --- Plotting ---
-        perc, acc, conv, iters = zip(*results)
-
-        fig, ax = plt.subplots(figsize=(12, 7))
-        ax.plot(perc, acc, marker="o", linewidth=2.5, markersize=10, 
-                markeredgecolor="white", markeredgewidth=1.5, zorder=1)
-
-        for p, a, c, n_iter in results:
-            color = "springgreen" if c else "orangered"
-            ax.scatter(p, a, color=color, s=140, zorder=2, edgecolor="black", linewidth=1)
-            
-            # Annotate iteration count (adaptive position: above if high, below if low)
-            if show_iteration_counts and not np.isnan(a):
-                if a < 0.15:
-                    offset_y, va = -15, "top"
-                else:
-                    offset_y, va = 12, "bottom"
-                ax.annotate(
-                    f"{n_iter:,}",
-                    xy=(p, a),
-                    xytext=(0, offset_y),
-                    textcoords="offset points",
-                    ha="center",
-                    va=va,
-                    fontsize=12,
-                    color="dimgray",
-                    fontweight="bold",
-                )
-
-        # Reference lines
-        ax.axhline(0.5, linestyle="--", color="gray", alpha=0.6)
-        ax.axhline(0.0, linestyle="-", color="black", alpha=0.2, linewidth=1)  # Zero line
-        
-        # Add legend for convergence status
-        from matplotlib.lines import Line2D
-        legend_elements = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='springgreen', 
-                   markersize=10, markeredgecolor='black', label='Converged'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='orangered', 
-                   markersize=10, markeredgecolor='black', label='Max iterations reached'),
-        ]
-        ax.legend(handles=legend_elements, loc='upper right', fontsize=14, edgecolor="black", facecolor="white", framealpha=1)
-        
-        ax.set_title(
-            "Sample Size vs Random Judge Acceptance",
-            fontsize=21, fontweight="bold"
-        )
-        ax.set_xlabel("Percentage of Data Sampled", fontsize=17, fontweight="bold")
-        ax.set_ylabel("Acceptance Rate (p > 0.05)", fontsize=17, fontweight="bold")
-        ax.tick_params(axis='both', which='major', labelsize=16)
-        ax.set_ylim(-0.12, 1.15)  # Room at bottom for low values + annotations
-        ax.set_xlim(min(perc) - 3, max(perc) + 3)
-        ax.grid(alpha=0.3)
-
-        plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            if self.verbosity > 0:
-                print(f"✅ Figure saved → {save_path}")
-
-        plt.show()
-    
-
     
     #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
     #~~~~~~~~~~~~~~~ Seed Robustness Analysis ~~~~~~~~~~~~~#
@@ -2207,86 +2159,84 @@ class LLMGoodEnough:
         Returns dict mapping percentage -> (acceptance_rate, converged, n_iterations).
         """
         from scipy.stats import mannwhitneyu
-        
-        # Set seed
+        import numpy as np
+
+        # Optional: keep global seeding, but the local RNG below is the real driver
         self._set_global_seed(seed)
-        
+
         human_cols = self.human_cols
-        rand_col = "RANDOM_as_a_judge"
         df = self.df.reset_index(drop=True)
-        
+
         results = {}
-        
+
         for p in percentages:
             n_rows = max(1, int(len(df) * (p / 100)))
             decisions = []
             converged = False
             iteration_count = 0
-            
+
+            # RNG once per (seed, percentage). We do NOT reseed each iteration.
+            # Fresh random judge comes from drawing a new pseudo_vals each loop iteration.
+            rng = np.random.default_rng(seed + p)
+
             while iteration_count < max_iterations:
-                sample = df.sample(n_rows, replace=True)
-                
-                # Compute human-human disagreements
+                # make the bootstrap sampling reproducible and tied to rng
+                sample = df.sample(
+                    n_rows,
+                    replace=True,
+                    random_state=int(rng.integers(0, 2**32 - 1)),
+                )
+
+                # --- 1) Human-human disagreements ---
                 human_dis = []
                 for _, row in sample[human_cols].iterrows():
                     vals = row.dropna().to_numpy()
                     if len(vals) >= 2:
                         diffs = np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
                         human_dis.extend(diffs)
-                
-                human_dis = np.array(human_dis)
-                if len(human_dis) == 0:
+
+                human_dis = np.asarray(human_dis)
+                if human_dis.size == 0:
                     iteration_count += 1
                     continue
-                
-                # Random-judge-human disagreements
-                pseudo_vals = sample[rand_col].to_numpy()
-                human_matrix = sample[human_cols].to_numpy()
-                mask = ~np.isnan(pseudo_vals)
-                pseudo_vals = pseudo_vals[mask]
-                human_sub = human_matrix[mask]
-                
-                pseudo_dis = []
-                for pj, row_vals in zip(pseudo_vals, human_sub):
-                    row_vals = row_vals[~np.isnan(row_vals)]
-                    if len(row_vals) > 0:
-                        pseudo_dis.extend(np.abs(row_vals - pj))
-                
-                pseudo_dis = np.array(pseudo_dis)
-                if len(pseudo_dis) == 0:
+
+                # --- 2) Random-judge-human disagreements (fresh random judge each iteration) ---
+                human_matrix = sample[human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
+                pseudo_vals = rng.integers(
+                    self.min_score, self.max_score + 1, size=human_matrix.shape[0]
+                ).astype(float)
+
+                pseudo_dis = np.abs(human_matrix - pseudo_vals[:, None])
+                pseudo_dis = pseudo_dis[~np.isnan(human_matrix)]  # flatten valid entries only
+
+                if pseudo_dis.size == 0:
                     iteration_count += 1
                     continue
-                
+
+                # --- 3) MWU test ---
                 p_val = mannwhitneyu(pseudo_dis, human_dis, alternative="greater").pvalue
                 decisions.append(1 if p_val > 0.05 else 0)
                 iteration_count += 1
-                
-                # Check convergence
-                if (iteration_count >= min_iterations and 
-                    iteration_count % check_interval == 0 and 
-                    len(decisions) >= min_iterations):
-                    
-                    decisions_arr = np.array(decisions)
+
+                # --- 4) Convergence check ---
+                if iteration_count >= min_iterations and iteration_count % check_interval == 0:
+                    decisions_arr = np.asarray(decisions)
                     half = len(decisions_arr) // 2
-                    mean_A = decisions_arr[:half].mean()
-                    mean_B = decisions_arr[half:].mean()
-                    
+                    mean_A = decisions_arr[:half].mean() if half > 0 else decisions_arr.mean()
+                    mean_B = decisions_arr[half:].mean() if half > 0 else decisions_arr.mean()
+
                     if abs(mean_A - mean_B) < convergence_threshold:
                         converged = True
                         break
-            
-            if len(decisions) > 0:
-                results[p] = (np.mean(decisions), converged, iteration_count)
-            else:
-                results[p] = (np.nan, False, iteration_count)
-        
-        return results
 
+            results[p] = (float(np.mean(decisions)) if decisions else np.nan, converged, iteration_count)
+
+        return results
 
     def plot_human_stability_seed_robustness(
         self,
         n_seeds: int = 20,
-        percentages: list[int] = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+        percentages: list[int] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
         min_iterations: int = 200,
         max_iterations: int = 5000,
         check_interval: int = 100,
