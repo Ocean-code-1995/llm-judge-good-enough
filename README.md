@@ -106,6 +106,22 @@ The goal is to test whether a language model's judgments align with human-level 
   <img src="diagrams/svg/general_approach.svg" width="650" alt="General Approach" />
 </p>
 
+### Why disagreement-based evaluation?
+
+In many evaluation tasks—particularly those involving subjective or weakly-defined criteria—there is **no single ground-truth label**. Human judgments naturally vary, reflecting genuine ambiguity, interpretation differences, and noise. Treating disagreement as error therefore obscures the structure of the task.
+
+Collapsing multiple human judgments into a single aggregated score (e.g., via averaging or majority vote) discards precisely the information this framework relies on: the **structure and magnitude of human disagreement**.
+
+
+Instead, this framework evaluates judges by comparing **disagreement distributions** rather than accuracy against a presumed oracle. For any judge (human, LLM, or baseline), we measure how much it disagrees with human annotators and compare this behavior to **inter-human disagreement**, which captures the natural “diversity of opinion” present in the task.
+
+Crucially, **human–human variability defines the achievable ceiling**: if an LLM’s disagreement distribution is statistically indistinguishable from inter-human disagreement, it cannot be meaningfully separated from human judgment behavior based on the available data alone.
+
+A **random judge** serves as a sanity-check baseline. With sufficient data, a random judge should be reliably rejected as human-like. Failure to do so indicates insufficient statistical power rather than model quality. By explicitly analyzing random-judge behavior across sample sizes, the framework verifies that the evaluation setup can distinguish meaningful structure from noise.
+
+In short, the framework asks not *“Is the LLM correct?”* but *“Is the LLM statistically indistinguishable from human variability?”*
+
+
 ### 1) Measure inter-human disagreement
 
 For each item, multiple human raters provide scores. All **pairwise absolute differences** between human scores are computed, forming a distribution that captures natural variability in human judgment (the “diversity of opinion”).
