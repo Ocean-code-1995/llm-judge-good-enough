@@ -328,7 +328,8 @@ def generate_gif(
         iterations=max_iterations,
         min_score=judge.min_score,
         max_score=judge.max_score,
-        human_dis=human_dis,
+        df_items=judge.df,
+        human_cols=judge.human_cols,
     )
     
     # Generate frames
@@ -497,4 +498,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
