@@ -4,8 +4,10 @@ import random
 from itertools import combinations
 from typing import Optional
 from scipy.stats import mannwhitneyu
+from scipy import stats
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.lines import Line2D
 import seaborn as sns
 sns.set_theme(style="whitegrid")
 from joblib import Parallel, delayed
@@ -191,6 +193,7 @@ class LLMGoodEnough:
             print(f"✅ Found {len(self.human_cols)} valid human annotator columns.")
 
 
+
     def _filter_minimum_raters(self, min_raters: int = 2) -> None:
         """
         Filter the dataset to include only cases (rows) that have at least a
@@ -227,6 +230,7 @@ class LLMGoodEnough:
             print(f"✅ Keeping {n_after}/{n_before} rows with ≥{min_raters} human annotators.")
 
 
+
     def _add_random_judge(self) -> None:
         """
         Add a baseline random judge column to the dataset.
@@ -248,44 +252,50 @@ class LLMGoodEnough:
             print("✅ Added random judge baseline column: 'RANDOM_as_a_judge'")
 
 
+
     # ~~~~~~~~~~~~~~~ CORE COMPUTATION METHODS (PUBLIC) ~~~~~~~~~~~~~~~
     def compute_human_disagreements(self, df: pd.DataFrame | None = None) -> np.ndarray:
         """
         Compute the Human–Human disagreement distribution.
 
+        For each item, returns absolute pairwise differences |H_i − H_j| across all
+        human rater pairs (i < j), ignoring missing ratings.
+
         Parameters
         ----------
         df : pd.DataFrame or None
-            If provided, compute disagreements on this dataframe.
-            If None, uses `self.df`.
+            Optional dataframe to compute on. Defaults to `self.df`.
 
         Returns
         -------
         np.ndarray
-            Flattened array of absolute pairwise disagreements between humans:
-            for each row, for all human pairs (i < j): |H_i - H_j|.
-
-        Why this exists
-        ---------------
-        Many analyses (e.g., Monte Carlo, stability) operate on *subsamples* of the data.
-        Passing `df` avoids accidental use of the full `self.df` when you intended to use
-        a sampled dataframe. It also keeps functions pure and testable.
+            Flattened array of absolute human–human disagreements.
         """
         df_use = self.df if df is None else df
 
-        diffs: list[float] = []
-        for _, row in df_use[self.human_cols].iterrows():
-            vals = row.dropna().to_numpy()
-            if len(vals) >= 2:
-                # upper triangle pairwise abs differences (avoid double counting)
-                diffs.extend(
-                    np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
-                )
+        # Coerce to numeric (non-numeric -> NaN), then convert to numpy
+        H = df_use[self.human_cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)  # (n_items, n_humans)
+        n_items, n_humans = H.shape
 
-        if not diffs:
+        if n_humans < 2:
+            raise ValueError("❌ Need at least two human columns to compute disagreements.")
+
+        # All unique (i < j) human rater pairs
+        ii, jj = np.triu_indices(n_humans, k=1)
+
+        out_chunks: list[np.ndarray] = []
+        for i, j in zip(ii, jj):
+            a = H[:, i]
+            b = H[:, j]
+            mask = (~np.isnan(a)) & (~np.isnan(b))
+            if np.any(mask):
+                out_chunks.append(np.abs(a[mask] - b[mask]))
+
+        if not out_chunks:
             raise ValueError("❌ No valid human-human pairs found (check input data / missingness).")
 
-        return np.asarray(diffs, dtype=float)
+        return np.concatenate(out_chunks).astype(float, copy=False)
+
 
 
 
@@ -318,8 +328,8 @@ class LLMGoodEnough:
         if llm_col not in df_use.columns:
             raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
 
-        human_matrix = df_use[self.human_cols].to_numpy(dtype=float)   # (n_items, n_humans)
-        llm_vec = df_use[llm_col].to_numpy(dtype=float)                # (n_items,)
+        human_matrix = df_use[self.human_cols].apply(pd.to_numeric, errors="coerce").to_numpy()
+        llm_vec = pd.to_numeric(df_use[llm_col], errors="coerce").to_numpy()
 
         diffs = np.abs(human_matrix - llm_vec[:, None])
         mask = (~np.isnan(human_matrix)) & (~np.isnan(llm_vec)[:, None])
@@ -780,7 +790,7 @@ class LLMGoodEnough:
         rng = np.random.default_rng(self.seed)
         results = np.empty((iterations, 2), dtype=float)
 
-        # ✅ IMPORTANT: baseline must match df_items (not self.df)
+        # IMPORTANT: baseline must match df_items (not self.df)
         human_human_dis = self.compute_human_disagreements(df=df_items)
         mean_hh = float(np.mean(human_human_dis))
 
@@ -827,12 +837,27 @@ class LLMGoodEnough:
         human_dis: np.ndarray,
         llm_dis: np.ndarray,
         iterations: int,
-    ):
+    ) -> plt.Figure:
         """
         Internal rendering engine for single-LLM robustness figure (Panels A, B, C).
+
+        Parameters
+        ----------
+        df_mc : pd.DataFrame
+            Monte Carlo results with columns 'delta_mean' and 'p_value'.
+        human_dis : np.ndarray
+            Human–Human disagreement distribution.
+        llm_dis : np.ndarray
+            LLM–Human disagreement distribution.
+        iterations : int
+            Number of Monte Carlo iterations.
+        
+        Returns
+        -------
+        plt.Figure
+            The rendered matplotlib figure with three panels.
         """
-        import seaborn as sns
-        import matplotlib.pyplot as plt
+
 
         sns.set_theme(style="whitegrid", font_scale=1.2)
         fig, axes = plt.subplots(1, 3, figsize=(22, 6))
@@ -904,7 +929,6 @@ class LLMGoodEnough:
         plt.tight_layout()
         return fig
     
-
 
 
     def _is_orangeish(self, color: str, threshold: float = 0.20) -> bool:
@@ -988,6 +1012,7 @@ class LLMGoodEnough:
         return style_map
 
 
+
     def _render_robustness_panels_multi_llm(
         self,
         df_mc: pd.DataFrame,
@@ -1010,10 +1035,8 @@ class LLMGoodEnough:
         iterations : int
             Number of Monte Carlo iterations (for title).
         """
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-
         sns.set_theme(style="whitegrid", font_scale=1.2)
+
         fig, axes = plt.subplots(1, 3, figsize=(22, 6))
 
         # ----- Panel A: p-Value Convergence -----
@@ -1157,6 +1180,8 @@ class LLMGoodEnough:
 
         plt.show()
 
+
+
     def count_pvalue_samples(
         self,
         iterations: int = 25_000,
@@ -1213,6 +1238,8 @@ class LLMGoodEnough:
             'below_pct': below / total * 100,
             'threshold': threshold,
         }
+
+
 
     def plot_monte_carlo_robustness_multi(
         self,
@@ -1302,6 +1329,18 @@ class LLMGoodEnough:
             
             if self.verbosity > 0:
                 print(f"   ✓ {llm_results[llm_col]['display_name']}: Δ={delta:.4f}, p={p_val:.4f}")
+        
+        # de-duplicate display names for legend clarity
+        seen = {}
+        for col, d in llm_results.items():
+            name = d["display_name"]
+            seen[name] = seen.get(name, 0) + 1
+
+        if any(v > 1 for v in seen.values()):
+            for col, d in llm_results.items():
+                if seen[d["display_name"]] > 1:
+                    d["display_name"] = col.replace("_as_a_judge", "")
+
 
         # Plot all LLMs in single figure
         fig = self._render_robustness_panels_multi_llm(
@@ -1317,6 +1356,8 @@ class LLMGoodEnough:
                 print(f"✅ Figure saved → {save_path}")
 
         plt.show()
+
+
 
     #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
     #~~~~~~~~~~~~~~~ Human Stability Analysis ~~~~~~~~~~~~~~~#
@@ -1377,6 +1418,8 @@ class LLMGoodEnough:
             effective_threshold = convergence_threshold
 
         return diff < effective_threshold
+
+
 
     def _compute_stability_for_percentage(
         self,
@@ -1454,9 +1497,11 @@ class LLMGoodEnough:
 
             # --- 2) Compute human–human disagreements ---
             try:
-               human_dis = self.compute_human_disagreements(df=sample)
+                human_dis = self.compute_human_disagreements(df=sample)
             except ValueError:
                 # No valid human-human pairs in this sample
+                # hence the iteration is "wasted" in terms of contributing a decision, 
+                # but it still consumes one unit of your max_iterations budget
                 iteration_count += 1
                 continue
 
@@ -1503,6 +1548,8 @@ class LLMGoodEnough:
         # Compute final acceptance rate
         mean_acceptance = float(np.mean(decisions)) if decisions else np.nan
         return p, mean_acceptance, converged, iteration_count
+
+
 
     def _run_percentage_loop(
         self,
@@ -1615,6 +1662,7 @@ class LLMGoodEnough:
 
             # --- 2) Human–Human disagreements (canonical method) ---
             try:
+            
                 human_dis = self.compute_human_disagreements(df=sample)
             except ValueError:
                 # No valid human-human pairs in this sample
@@ -1664,6 +1712,7 @@ class LLMGoodEnough:
         p90_delta = float(np.percentile(deltas, 90)) if deltas else np.nan
         return p, mean_acceptance, mean_delta, p10_delta, p90_delta, converged, iteration_count
 
+
     def _run_percentage_loop_llm(
         self,
         percentages: list[int],
@@ -1696,6 +1745,8 @@ class LLMGoodEnough:
             ]
 
         return results
+
+
 
     def plot_human_stability_analysis(
         self,
@@ -1822,7 +1873,6 @@ class LLMGoodEnough:
         # =====================================================================
         # Plotting
         # =====================================================================
-        from matplotlib.lines import Line2D
 
         fig, ax = plt.subplots(figsize=(12, 7))
 
@@ -1931,6 +1981,7 @@ class LLMGoodEnough:
 
         plt.show()
 
+
     def plot_llm_stability_analysis(
         self,
         llm_col: str,
@@ -1981,8 +2032,6 @@ class LLMGoodEnough:
 
         perc, acc, delta, delta_p10, delta_p90, conv, iters = zip(*results)
 
-        import matplotlib.pyplot as plt
-        from matplotlib.lines import Line2D
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
 
@@ -2169,15 +2218,9 @@ class LLMGoodEnough:
                 )
 
                 # 1) Human–Human disagreements
-                human_dis = []
-                for _, row in sample[self.human_cols].iterrows():
-                    vals = row.dropna().to_numpy()
-                    if len(vals) >= 2:
-                        human_dis.extend(
-                            np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
-                        )
-                human_dis = np.asarray(human_dis, dtype=float)
-                if human_dis.size == 0:
+                try:
+                    human_dis = self.compute_human_disagreements(df=sample)
+                except ValueError:
                     iteration_count += 1
                     continue
 
@@ -2263,8 +2306,6 @@ class LLMGoodEnough:
         save_path : str or None
             Path to save the figure.
         """
-        import matplotlib.pyplot as plt
-        from scipy import stats
         
         if self.verbosity > 0:
             print(f"🔄 Running seed sensitivity analysis with {n_seeds} seeds...")
