@@ -1,4 +1,3 @@
-from turtle import color
 import pandas as pd
 import numpy as np
 import random
@@ -298,42 +297,39 @@ class LLMGoodEnough:
         """
         Compute the LLM–Human disagreement distribution.
 
+        For each item, computes absolute differences |LLM − H_j| between the LLM
+        rating and all available human ratings. Rows with missing LLM ratings
+        are ignored; missing human ratings are skipped.
+
         Parameters
         ----------
         llm_col : str
             Column name of the LLM judge.
         df : pd.DataFrame or None
-            If provided, compute disagreements on this dataframe.
-            If None, uses `self.df`.
+            Optional dataframe to compute on. Defaults to `self.df`.
 
         Returns
         -------
         np.ndarray
-            Flattened array of absolute differences for all available pairs:
-            |LLM - H_j| for each row and each non-missing human rating H_j.
-
-        Notes
-        -----
-        - Missing human ratings are ignored (pair simply doesn't exist).
-        - Missing LLM rating on a row -> row contributes nothing.
+            Flattened array of absolute LLM–Human disagreements.
         """
         df_use = self.df if df is None else df
 
         if llm_col not in df_use.columns:
             raise ValueError(f"❌ LLM column not found in DataFrame: {llm_col}")
 
-        diffs: list[float] = []
-        for _, row in df_use[[llm_col] + self.human_cols].iterrows():
-            llm_val = row[llm_col]
-            if pd.notna(llm_val):
-                human_vals = row[self.human_cols].dropna().to_numpy()
-                if len(human_vals):
-                    diffs.extend(np.abs(human_vals - llm_val))
+        human_matrix = df_use[self.human_cols].to_numpy(dtype=float)   # (n_items, n_humans)
+        llm_vec = df_use[llm_col].to_numpy(dtype=float)                # (n_items,)
 
-        if not diffs:
-            raise ValueError("❌ No valid LLM-human pairs found (check missing ratings).")
+        diffs = np.abs(human_matrix - llm_vec[:, None])
+        mask = (~np.isnan(human_matrix)) & (~np.isnan(llm_vec)[:, None])
 
-        return np.asarray(diffs, dtype=float)
+        out = diffs[mask]
+
+        if out.size == 0:
+            raise ValueError("❌ No valid LLM–human pairs found.")
+
+        return out.astype(float, copy=False)
 
 
 
@@ -474,31 +470,61 @@ class LLMGoodEnough:
     ) -> None:
         """
         INTERNAL PLOTTING ENGINE.
-        Handles rendering of model-vs-human disagreement histograms.
 
-        This method should not be called directly by users.
+        Render histogram-based comparisons between human–human disagreement
+        (distribution of human opinion diversity) and model–human disagreement
+        (distribution of model deviation from humans).
+
+        This function assumes that *disagreement magnitude is defined by the
+        rating scale itself*, not by the observed data range. Therefore, when
+        `bins` is not explicitly provided, histogram bins are constructed from
+        the theoretical maximum disagreement:
+
+            max_possible_disagreement = max_score − min_score
+
+        This guarantees:
+            • consistent binning across datasets and subsamples
+            • comparability between human, LLM, and random-judge baselines
+            • alignment with Monte Carlo and stability analyses
+
+        This method is purely a rendering utility and does not perform any
+        statistical inference beyond visualizing precomputed distributions.
 
         Parameters
         ----------
         model_disagreement_dict : dict
-            Dictionary where keys are model names and values are disagreement arrays.
+            Mapping from model name → disagreement array.
+            Each array contains absolute differences between the model’s ratings
+            and human ratings.
+
         human_human_disagreements : np.ndarray, optional
-            Array of human-human disagreements. If None, will be computed.
+            Array of absolute human–human disagreements.
+            If None, it is computed from the full dataset.
+
         bins : np.ndarray, optional
-            Bins for the histogram. If None, will be inferred from data.
-        bar_width : float, optional
-            Width of the bars in the histogram.
-        y_lim : float, optional
-            Upper limit of the y-axis.
-        save_path : str, optional
-            Path to save the figure. If None, the figure will not be saved.
+            Explicit histogram bin edges.
+            If None, bins are constructed as:
+                np.arange(0, (max_score − min_score) + 2)
+
+        bar_width : float, default=0.35
+            Width of histogram bars for side-by-side comparison.
+
+        y_lim : float, default=0.6
+            Upper limit for the probability density axis.
+
+        save_path : str or None
+            Optional path to save the rendered figure.
+
+        Returns
+        -------
+        None
+            This method renders and optionally saves a matplotlib figure.
         """
+
         if human_human_disagreements is None:
             human_human_disagreements = self.compute_human_disagreements()
         if bins is None:
-            min_score = int(self.df[self.human_cols].min().min())
-            max_score = int(self.df[self.human_cols].max().max())
-            max_possible_disagreement = max_score - min_score
+            max_possible_disagreement = self.max_score - self.min_score
             bins = np.arange(0, max_possible_disagreement + 2)
 
         n_models = len(model_disagreement_dict)
@@ -715,7 +741,6 @@ class LLMGoodEnough:
         min_score: int,
         max_score: int,
         df_items: pd.DataFrame,
-        human_cols: list[str],
     ) -> pd.DataFrame:
         """
         INTERNAL: Monte-Carlo simulation of *fresh random judges*.
@@ -740,8 +765,7 @@ class LLMGoodEnough:
             Score range for the random judge (inclusive).
         df_items : pd.DataFrame
             The item-level dataframe to use (can be full dataset or a subset).
-        human_cols : list[str]
-            Human rating columns.
+
 
         Returns
         -------
@@ -761,7 +785,7 @@ class LLMGoodEnough:
         mean_hh = float(np.mean(human_human_dis))
 
         # Cache human matrix for vectorized disagreement computation
-        human_matrix = df_items[human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
+        human_matrix = df_items[self.human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
         n_items = human_matrix.shape[0]
 
         for i in range(iterations):
@@ -988,7 +1012,6 @@ class LLMGoodEnough:
         """
         import seaborn as sns
         import matplotlib.pyplot as plt
-        import itertools
 
         sns.set_theme(style="whitegrid", font_scale=1.2)
         fig, axes = plt.subplots(1, 3, figsize=(22, 6))
@@ -1041,17 +1064,19 @@ class LLMGoodEnough:
         llm_names = list(llm_results.keys())
         style_map = self._make_llm_style_map(llm_names)
 
-        for llm_name, results in llm_results.items():
-            style = style_map[llm_name]
+        for llm_col, results in llm_results.items():
+            label = results["display_name"]
+            style = style_map[llm_col]
 
             axes[2].scatter(
-                results["delta"], results["p_value"],
+                results["delta"],
+                results["p_value"],
                 color=style["color"],
                 marker=style["marker"],
                 edgecolor="black",
                 s=180,
                 linewidth=1.5,
-                label=llm_name,
+                label=label,
                 zorder=10,
             )
 
@@ -1117,7 +1142,6 @@ class LLMGoodEnough:
             min_score=self.min_score,
             max_score=self.max_score,
             df_items=self.df,             # item-level dataframe
-            human_cols=self.human_cols,
         )
 
         human_dis = self.compute_human_disagreements(df=self.df)
@@ -1175,7 +1199,6 @@ class LLMGoodEnough:
             min_score=self.min_score,
             max_score=self.max_score,
             df_items=self.df,
-            human_cols=self.human_cols,
         )
 
         total = len(df_mc)
@@ -1260,7 +1283,6 @@ class LLMGoodEnough:
             min_score=self.min_score,
             max_score=self.max_score,
             df_items=self.df,
-            human_cols=self.human_cols,
         )
 
 
@@ -1271,17 +1293,15 @@ class LLMGoodEnough:
             delta = np.mean(llm_dis) - np.mean(human_dis)
             p_val = mannwhitneyu(llm_dis, human_dis, alternative="greater").pvalue
             
-            # Extract a clean display name from column name
-            display_name = self._clean_model_name(llm_col)
-            
-            llm_results[display_name] = {
+            llm_results[llm_col] = {
                 "delta": delta,
                 "p_value": p_val,
-                "col": llm_col,
+                "display_name": self._clean_model_name(llm_col),
             }
+
             
             if self.verbosity > 0:
-                print(f"   ✓ {display_name}: Δ={delta:.4f}, p={p_val:.4f}")
+                print(f"   ✓ {llm_results[llm_col]['display_name']}: Δ={delta:.4f}, p={p_val:.4f}")
 
         # Plot all LLMs in single figure
         fig = self._render_robustness_panels_multi_llm(
@@ -1362,7 +1382,6 @@ class LLMGoodEnough:
         self,
         p: int,
         df: pd.DataFrame,
-        human_cols: list[str],
         min_iterations: int,
         max_iterations: int,
         check_interval: int,
@@ -1383,8 +1402,6 @@ class LLMGoodEnough:
             Percentage of data to sample (e.g., 10 means 10% of rows).
         df : pd.DataFrame
             The full dataset to sample from.
-        human_cols : list of str
-            Column names containing human ratings.
         min_iterations : int
             Minimum iterations before checking convergence.
         max_iterations : int
@@ -1432,41 +1449,25 @@ class LLMGoodEnough:
             sample = df.sample(
                 n_rows,
                 replace=True,
-                random_state=rng.integers(0, 2**32 - 1),
+                random_state=int(rng.integers(0, 2**32 - 1)),
             )
 
             # --- 2) Compute human–human disagreements ---
-            # For each row, compute pairwise absolute differences between all human judges
-            human_dis = []
-            for _, row in sample[human_cols].iterrows():
-                vals = row.dropna().to_numpy()
-                if len(vals) >= 2:
-                    # Upper triangle of pairwise difference matrix (avoid double-counting)
-                    human_dis.extend(
-                        np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), 1)]
-                    )
-            human_dis = np.asarray(human_dis)
-            
-            # Skip iteration if no valid human disagreements
-            if len(human_dis) == 0:
+            try:
+               human_dis = self.compute_human_disagreements(df=sample)
+            except ValueError:
+                # No valid human-human pairs in this sample
                 iteration_count += 1
                 continue
 
-            # --- 3) Generate random judge and compute disagreements ---
-            # Fresh random judge each iteration: one random rating per sampled item.
-            # (uniform within score range)
-            pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=len(sample))
-            
-            pseudo_dis = []
-            for pj, row_vals in zip(pseudo_vals, sample[human_cols].to_numpy()):
-                row_vals = row_vals[~np.isnan(row_vals)]
-                if len(row_vals):
-                    # Absolute difference between random judge and each human
-                    pseudo_dis.extend(np.abs(row_vals - pj))
-            pseudo_dis = np.asarray(pseudo_dis)
-            
-            # Skip iteration if no valid random-human disagreements
-            if len(pseudo_dis) == 0:
+            # --- 3) Random–Human disagreements (fresh random judge each iteration) ---
+            human_matrix = sample[self.human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
+            pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=human_matrix.shape[0]).astype(float)
+
+            diffs = np.abs(human_matrix - pseudo_vals[:, None])      # (n_items, n_humans)
+            pseudo_dis = diffs[~np.isnan(human_matrix)]              # flatten valid entries only
+
+            if pseudo_dis.size == 0:
                 iteration_count += 1
                 continue
 
@@ -1528,7 +1529,7 @@ class LLMGoodEnough:
             ``cpu_count() - 1`` to leave one core free for system tasks.
         **worker_kwargs
             Additional keyword arguments passed to `_compute_stability_for_percentage`.
-            Typically includes: df, human_cols, min_iterations, max_iterations,
+            Typically includes: df, min_iterations, max_iterations,
             check_interval, convergence_threshold, relative_convergence, seed.
 
         Returns
@@ -1573,7 +1574,6 @@ class LLMGoodEnough:
         self,
         p: int,
         df: pd.DataFrame,
-        human_cols: list[str],
         llm_col: str,
         min_iterations: int,
         max_iterations: int,
@@ -1610,34 +1610,26 @@ class LLMGoodEnough:
             sample = df.sample(
                 n_rows,
                 replace=True,
-                random_state=rng.integers(0, 2**32 - 1),
+                random_state=int(rng.integers(0, 2**32 - 1)),
             )
 
-            # --- 2) Human–Human disagreements ---
-            human_dis = []
-            for _, row in sample[human_cols].iterrows():
-                vals = row.dropna().to_numpy()
-                if len(vals) >= 2:
-                    human_dis.extend(
-                        np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), 1)]
-                    )
-            human_dis = np.asarray(human_dis)
-            if len(human_dis) == 0:
+            # --- 2) Human–Human disagreements (canonical method) ---
+            try:
+                human_dis = self.compute_human_disagreements(df=sample)
+            except ValueError:
+                # No valid human-human pairs in this sample
                 iteration_count += 1
                 continue
 
-            # --- 3) LLM–Human disagreements ---
-            llm_dis = []
-            for _, row in sample[[llm_col] + human_cols].iterrows():
-                llm_val = row[llm_col]
-                if pd.notna(llm_val):
-                    vals = row[human_cols].dropna().to_numpy()
-                    if len(vals):
-                        llm_dis.extend(np.abs(vals - llm_val))
-            llm_dis = np.asarray(llm_dis)
-            if len(llm_dis) == 0:
+
+            # --- 3) LLM–Human disagreements (canonical method) ---
+            try:
+                llm_dis = self.compute_llm_human_disagreements(llm_col=llm_col, df=sample)
+            except ValueError:
+                # No valid LLM-human pairs in this sample
                 iteration_count += 1
                 continue
+
 
             # --- 4) MWU test + record decision ---
             p_val = mannwhitneyu(llm_dis, human_dis, alternative="greater").pvalue
@@ -1668,8 +1660,8 @@ class LLMGoodEnough:
 
         mean_acceptance = float(np.mean(decisions)) if decisions else np.nan
         mean_delta = float(np.mean(deltas)) if deltas else np.nan
-        p10_delta = float(np.nanpercentile(deltas, 10)) if deltas else np.nan
-        p90_delta = float(np.nanpercentile(deltas, 90)) if deltas else np.nan
+        p10_delta = float(np.percentile(deltas, 10)) if deltas else np.nan
+        p90_delta = float(np.percentile(deltas, 90)) if deltas else np.nan
         return p, mean_acceptance, mean_delta, p10_delta, p90_delta, converged, iteration_count
 
     def _run_percentage_loop_llm(
@@ -1816,7 +1808,6 @@ class LLMGoodEnough:
             parallel=parallel,
             n_jobs=n_jobs,
             df=df,
-            human_cols=self.human_cols,
             min_iterations=min_iterations,
             max_iterations=max_iterations,
             check_interval=check_interval,
@@ -1979,7 +1970,6 @@ class LLMGoodEnough:
             parallel=parallel,
             n_jobs=n_jobs,
             df=df,
-            human_cols=self.human_cols,
             llm_col=llm_col,
             min_iterations=min_iterations,
             max_iterations=max_iterations,
@@ -2153,85 +2143,83 @@ class LLMGoodEnough:
         max_iterations: int,
         check_interval: int,
         convergence_threshold: float,
-    ) -> dict:
+        relative_convergence: bool = True,   # ✅ add
+    ) -> dict[int, tuple[float, bool, int]]:
         """
         Internal: Run stability analysis for a single seed without plotting.
         Returns dict mapping percentage -> (acceptance_rate, converged, n_iterations).
         """
-        from scipy.stats import mannwhitneyu
-        import numpy as np
-
-        # Optional: keep global seeding, but the local RNG below is the real driver
-        self._set_global_seed(seed)
-
-        human_cols = self.human_cols
         df = self.df.reset_index(drop=True)
 
-        results = {}
+        results: dict[int, tuple[float, bool, int]] = {}
 
         for p in percentages:
             n_rows = max(1, int(len(df) * (p / 100)))
-            decisions = []
+            decisions: list[bool] = []
             converged = False
             iteration_count = 0
 
-            # RNG once per (seed, percentage). We do NOT reseed each iteration.
-            # Fresh random judge comes from drawing a new pseudo_vals each loop iteration.
             rng = np.random.default_rng(seed + p)
 
             while iteration_count < max_iterations:
-                # make the bootstrap sampling reproducible and tied to rng
                 sample = df.sample(
                     n_rows,
                     replace=True,
                     random_state=int(rng.integers(0, 2**32 - 1)),
                 )
 
-                # --- 1) Human-human disagreements ---
+                # 1) Human–Human disagreements
                 human_dis = []
-                for _, row in sample[human_cols].iterrows():
+                for _, row in sample[self.human_cols].iterrows():
                     vals = row.dropna().to_numpy()
                     if len(vals) >= 2:
-                        diffs = np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
-                        human_dis.extend(diffs)
-
-                human_dis = np.asarray(human_dis)
+                        human_dis.extend(
+                            np.abs(vals[:, None] - vals[None, :])[np.triu_indices(len(vals), k=1)]
+                        )
+                human_dis = np.asarray(human_dis, dtype=float)
                 if human_dis.size == 0:
                     iteration_count += 1
                     continue
 
-                # --- 2) Random-judge-human disagreements (fresh random judge each iteration) ---
-                human_matrix = sample[human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
-                pseudo_vals = rng.integers(
-                    self.min_score, self.max_score + 1, size=human_matrix.shape[0]
-                ).astype(float)
+                # 2) Random–Human disagreements (fresh random judge)
+                human_matrix = sample[self.human_cols].to_numpy(dtype=float)
+                pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=human_matrix.shape[0]).astype(float)
 
                 pseudo_dis = np.abs(human_matrix - pseudo_vals[:, None])
-                pseudo_dis = pseudo_dis[~np.isnan(human_matrix)]  # flatten valid entries only
-
+                pseudo_dis = pseudo_dis[~np.isnan(human_matrix)]
                 if pseudo_dis.size == 0:
                     iteration_count += 1
                     continue
 
-                # --- 3) MWU test ---
+                # 3) MWU + decision
                 p_val = mannwhitneyu(pseudo_dis, human_dis, alternative="greater").pvalue
-                decisions.append(1 if p_val > 0.05 else 0)
+                decisions.append(p_val > 0.05)
                 iteration_count += 1
 
-                # --- 4) Convergence check ---
+                # 4) ✅ Convergence check (same logic as everywhere else)
                 if iteration_count >= min_iterations and iteration_count % check_interval == 0:
-                    decisions_arr = np.asarray(decisions)
+                    decisions_arr = np.asarray(decisions, dtype=float)
                     half = len(decisions_arr) // 2
-                    mean_A = decisions_arr[:half].mean() if half > 0 else decisions_arr.mean()
-                    mean_B = decisions_arr[half:].mean() if half > 0 else decisions_arr.mean()
+                    if half == 0:
+                        continue
 
-                    if abs(mean_A - mean_B) < convergence_threshold:
+                    mean_A = float(np.mean(decisions_arr[:half]))
+                    mean_B = float(np.mean(decisions_arr[half:]))
+
+                    if self._has_converged(
+                        mean_A,
+                        mean_B,
+                        convergence_threshold,
+                        relative_convergence,
+                    ):
                         converged = True
                         break
 
-            results[p] = (float(np.mean(decisions)) if decisions else np.nan, converged, iteration_count)
+            acc = float(np.mean(decisions)) if decisions else np.nan
+            results[p] = (acc, converged, iteration_count)
 
         return results
+
 
     def plot_human_stability_seed_robustness(
         self,
@@ -2241,6 +2229,7 @@ class LLMGoodEnough:
         max_iterations: int = 5000,
         check_interval: int = 100,
         convergence_threshold: float = 0.01,
+        relative_convergence: bool = True,
         confidence_level: float = 0.95,
         save_path: str | None = None,
     ) -> None:
@@ -2299,6 +2288,7 @@ class LLMGoodEnough:
                 max_iterations=max_iterations,
                 check_interval=check_interval,
                 convergence_threshold=convergence_threshold,
+                relative_convergence=relative_convergence,
             )
             
             for p in percentages:
