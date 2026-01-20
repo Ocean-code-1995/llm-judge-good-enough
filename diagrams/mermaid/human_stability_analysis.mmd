@@ -1,0 +1,26 @@
+flowchart TD
+    A["Input:<br/>Human ratings (>=2 cols)<br/>min_score..max_score"] --> P{"For each sample % p"}
+
+    P --> S["Bootstrap sample rows<br/>replace=True"]
+
+    S --> HH["Human-Human<br/>disagreements"]
+    S --> RJ["Sample random judge<br/>uniform[min,max]"]
+    RJ --> RH["Random-Human<br/>disagreements"]
+
+    HH --> MWU["MWU test (one-sided, 'greater')<br/>Random-Human vs Human-Human"]
+    RH --> MWU
+
+    MWU --> D{"p_value > 0.05?"}
+    D -->|Yes| ACC["Accept random<br/>(fail to reject H0)"]
+    D -->|No| REJ["Reject random"]
+
+    ACC --> REC["Record decision"]
+    REJ --> REC
+
+    REC --> C{"Converged?<br/>(split-half stable)<br/>or max_iterations"}
+    C -->|No| S
+    C -->|Yes| OUT["Output for p:<br/>acceptance_rate<br/>iterations_used"]
+
+    OUT --> PLOT["Plot across p:<br/>x=sample %<br/>y=acceptance_rate<br/>color=converged?"]
+
+

@@ -5,3 +5,6 @@ seaborn
 scipy
 openai
 mistralai
+Pillow
+python-dotenv
+joblib
