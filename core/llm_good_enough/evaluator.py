@@ -755,52 +755,54 @@ class LLMGoodEnough:
         """
         INTERNAL: Monte-Carlo simulation of *fresh random judges*.
 
-        Concept
-        -------
-        We generate a new random judge per Monte Carlo iteration by drawing one random rating
-        per item from a single RNG stream (seeded with `self.seed`). This is reproducible
-        and equivalent to sampling "fresh judges" each iteration.
+        Pattern A (parallel-safe RNG)
+        -----------------------------
+        Each Monte Carlo iteration uses its own independent RNG stream derived from a
+        master SeedSequence (self.seed). This guarantees:
+        - reproducibility for a fixed self.seed
+        - independence between Monte Carlo draws
+        - parallel-safety (iteration order / worker scheduling won't change results)
 
         For each iteration:
         1) Draw one random rating per item (row): R_i
         2) Compute Random–Human disagreements: |R_i - H_ij| for all non-missing H_ij
         3) Compute effect size: delta_mean = mean(Random–Human) - mean(Human–Human)
         4) Compute one-sided MWU p-value for Random–Human > Human–Human
-
-        Parameters
-        ----------
-        iterations : int
-            Number of Monte Carlo draws (random judges).
-        min_score, max_score : int
-            Score range for the random judge (inclusive).
-        df_items : pd.DataFrame
-            The item-level dataframe to use (can be full dataset or a subset).
-
-
-        Returns
-        -------
-        pd.DataFrame
-            Columns:
-            - delta_mean : float
-            - p_value    : float
         """
-        # Single RNG stream seeded with `self.seed`.
-        # Each call to `rng.integers` produces a fresh random judge,
-        # while keeping the full Monte Carlo simulation reproducible.
-        rng = np.random.default_rng(self.seed)
+
         results = np.empty((iterations, 2), dtype=float)
 
-        # IMPORTANT: baseline must match df_items (not self.df)
-        human_human_dis = self.compute_human_disagreements(df=df_items)
-        mean_hh = float(np.mean(human_human_dis))
+        # ---- ensure df_items is usable and consistent ----
+        df_use = df_items.copy()
 
-        # Cache human matrix for vectorized disagreement computation
-        human_matrix = df_items[self.human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
+        # Enforce ">=2 human ratings" rule (recommended for stability / consistency)
+        mask_2plus = df_use[self.human_cols].notna().sum(axis=1) >= 2
+        df_use = df_use.loc[mask_2plus].copy()
+
+        # Coerce human ratings to numeric consistently (matches your other methods)
+        human_matrix = (
+            df_use[self.human_cols]
+            .apply(pd.to_numeric, errors="coerce")
+            .to_numpy(dtype=float)
+        )
         n_items = human_matrix.shape[0]
 
-        for i in range(iterations):
+        if n_items == 0:
+            raise ValueError("❌ No valid items with ≥2 human ratings for Monte Carlo simulation.")
+
+        # IMPORTANT: baseline must match df_use (not self.df)
+        human_human_dis = self.compute_human_disagreements(df=df_use)
+        mean_hh = float(np.mean(human_human_dis))
+
+        # ----- Pattern A RNG: independent stream per iteration -----
+        ss = np.random.SeedSequence(self.seed)
+        child_seeds = ss.spawn(iterations)
+
+        for i, child_ss in enumerate(child_seeds):
+            rng_i = np.random.default_rng(child_ss)
+
             # 1) Fresh random rating per item (this is the "fresh random judge")
-            r = rng.integers(min_score, max_score + 1, size=n_items).astype(float)  # (n_items,)
+            r = rng_i.integers(min_score, max_score + 1, size=n_items).astype(float)
 
             # 2) Random–Human disagreements for all non-missing humans
             diffs = np.abs(human_matrix - r[:, None])          # (n_items, n_humans)
@@ -821,6 +823,7 @@ class LLMGoodEnough:
             results[i] = (delta, p_val)
 
         return pd.DataFrame(results, columns=["delta_mean", "p_value"])
+
 
 
 
@@ -1126,6 +1129,7 @@ class LLMGoodEnough:
         llm_col: str,
         iterations: int = 25_000,
         save_path: str | None = None,
+        df_items: pd.DataFrame | None = None,
     ) -> None:
         """
         Run a Monte-Carlo robustness analysis of the LLM-as-a-judge evaluation.
@@ -1157,17 +1161,18 @@ class LLMGoodEnough:
         save_path : str or None
             Optional file path to save the resulting 3-panel figure.
         """
+        df_use = self.df if df_items is None else df_items
 
-        llm_dis = self.compute_llm_human_disagreements(llm_col, df=self.df)
+        llm_dis = self.compute_llm_human_disagreements(llm_col, df=df_use)
 
         df_mc = self._monte_carlo_random_judges(
             iterations=iterations,
             min_score=self.min_score,
             max_score=self.max_score,
-            df_items=self.df,             # item-level dataframe
+            df_items=df_use,             # item-level dataframe
         )
 
-        human_dis = self.compute_human_disagreements(df=self.df)
+        human_dis = self.compute_human_disagreements(df=df_use)
         fig = self._render_robustness_panels(
             df_mc=df_mc,
             human_dis=human_dis,
@@ -1506,7 +1511,11 @@ class LLMGoodEnough:
                 continue
 
             # --- 3) Random–Human disagreements (fresh random judge each iteration) ---
-            human_matrix = sample[self.human_cols].to_numpy(dtype=float)  # (n_items, n_humans)
+            human_matrix = (
+                sample[self.human_cols]
+                .apply(pd.to_numeric, errors="coerce")
+                .to_numpy(dtype=float)
+            )                                               # (n_items, n_humans)
             pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=human_matrix.shape[0]).astype(float)
 
             diffs = np.abs(human_matrix - pseudo_vals[:, None])      # (n_items, n_humans)
@@ -1525,7 +1534,9 @@ class LLMGoodEnough:
             iteration_count += 1
 
             # --- 5) Periodic convergence check ---
-            if iteration_count >= min_iterations and iteration_count % check_interval == 0:
+            n_decisions = len(decisions)
+            if n_decisions >= min_iterations and n_decisions % check_interval == 0:
+
                 decisions_arr = np.asarray(decisions, dtype=float)
                 half = len(decisions_arr) // 2
 
@@ -2239,8 +2250,10 @@ class LLMGoodEnough:
                 decisions.append(p_val > 0.05)
                 iteration_count += 1
 
-                # 4) ✅ Convergence check (same logic as everywhere else)
-                if iteration_count >= min_iterations and iteration_count % check_interval == 0:
+                # 4) Convergence check 
+                n_decisions = len(decisions)
+                if n_decisions >= min_iterations and n_decisions % check_interval == 0:
+
                     decisions_arr = np.asarray(decisions, dtype=float)
                     half = len(decisions_arr) // 2
                     if half == 0:
