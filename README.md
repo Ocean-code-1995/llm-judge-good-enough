@@ -203,10 +203,22 @@ This section explains what the main analysis/plotting functions do and how to in
 Implemented in `visualize_good_enough()`, this plot directly compares the **distribution of human–human**, **LLM–human**, and **random–human** disagreements.  
 It visually illustrates whether the LLM's disagreement pattern overlaps with natural human variability or drifts toward random behavior.
 
+<p align="center">
+  <a href="benchmarks/politifact/figures/svg/politifact_s3_barplot.svg">
+    <img src="benchmarks/politifact/figures/svg/politifact_s3_barplot.svg" width="600" style="max-width: 100%; height: auto;" alt="Barplot (PolitiFact S3)" />
+  </a>
+</p>
+
+
 ### 2. Multi-Model Comparison Grid
 Implemented in `plot_judges_grid()`, this method extends the same logic to multiple candidate models.  
 It allows quick visual comparison across several LLMs to identify which behave most like human judges.
 
+<p align="center">
+  <a href="benchmarks/newsroom/figures/svg/newsroom_fluency_barplot.svg">
+    <img src="benchmarks/newsroom/figures/svg/newsroom_fluency_barplot.svg" width="600" style="max-width: 100%; height: auto;" alt="Barplot (Newsroom Fluency)" />
+  </a>
+</p>
 
 ### 3. Robustness Visualization
 
@@ -273,6 +285,12 @@ Points high on the plot (large *p*) indicate human-like behavior; points low and
 It bridges *practical difference* and *statistical certainty*, showing whether large deviations consistently translate into significant differences.  
 Ideally, the LLM clusters near the top (non-significant, human-like) while the random judge clusters lower and farther right (significantly worse).
 
+<p align="center">
+  <a href="benchmarks/newsroom/figures/svg/newsroom_monte_carlo_robustness_fluency.svg">
+    <img src="benchmarks/newsroom/figures/svg/newsroom_monte_carlo_robustness_fluency.svg" width="900" style="max-width: 100%; height: auto;" alt="Newsroom Monte Carlos Ribustness (Fluency)" />
+  </a>
+</p>
+
 ---
 
 > **In essence:**  
@@ -333,6 +351,13 @@ It checks whether the **random judge** tends to disagree with humans **more** th
 - But it does **not** create new information: it can make the test look artificially more confident, so it should not be interpreted as equivalent to collecting more real, independent data.
 - If acceptance only approaches ~0 when going above 100%, that suggests **more real (independent) data would likely help**, but the main “do we have enough data?” call should still be judged by behavior near **~100%** plus convergence.
 
+<p align="center">
+  <a href="benchmarks/newsroom/figures/svg/newsroom_human_stability_analysis_fluency.svg">
+    <img src="benchmarks/newsroom/figures/svg/newsroom_human_stability_analysis_fluency.svg" width="600" style="max-width: 100%; height: auto;" alt="Human Stability Anaylsis (Fluency)" />
+  </a>
+</p>
+
+
 #### **What the Plot Shows**
 - **X-axis:** Percentage of the dataset sampled
 - **Y-axis:** Acceptance rate (how often the random judge is "accepted" as human-like)
@@ -379,6 +404,12 @@ This section corresponds to `plot_llm_stability_analysis(llm_col)`.
 - **Δ ≈ 0**: LLM deviations are about the same magnitude as human–human variability (good sign).
 - **Δ > 0**: LLM disagrees more than humans disagree with each other (practically worse).
 - **Δ < 0**: LLM is more “consistent” than humans (not automatically better; could be overly conservative).
+
+<p align="center">
+  <a href="benchmarks/newsroom/figures/svg/newsroom_GPT-4o_stability_analysis_fluency.svg">
+    <img src="benchmarks/newsroom/figures/svg/newsroom_GPT-4o_stability_analysis_fluency.svg" width="600" style="max-width: 100%; height: auto;" alt="LLM Stability Anaylsis (Fluency)" />
+  </a>
+</p>
 
 ---
 
