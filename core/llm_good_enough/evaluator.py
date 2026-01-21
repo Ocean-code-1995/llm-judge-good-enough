@@ -1697,7 +1697,8 @@ class LLMGoodEnough:
             iteration_count += 1
 
             # --- 5) Convergence check (split-half acceptance rate) ---
-            if iteration_count >= min_iterations and iteration_count % check_interval == 0:
+            n_decisions = len(decisions)
+            if iteration_count >= min_iterations and n_decisions % check_interval == 0:
                 decisions_arr = np.asarray(decisions, dtype=float)
                 half = len(decisions_arr) // 2
 
@@ -2236,7 +2237,12 @@ class LLMGoodEnough:
                     continue
 
                 # 2) Random–Human disagreements (fresh random judge)
-                human_matrix = sample[self.human_cols].to_numpy(dtype=float)
+                human_matrix = (
+                    sample[self.human_cols]
+                    .apply(pd.to_numeric, errors="coerce")
+                    .to_numpy(dtype=float)
+                )
+
                 pseudo_vals = rng.integers(self.min_score, self.max_score + 1, size=human_matrix.shape[0]).astype(float)
 
                 pseudo_dis = np.abs(human_matrix - pseudo_vals[:, None])
