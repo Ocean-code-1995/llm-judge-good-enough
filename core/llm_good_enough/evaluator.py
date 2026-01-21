@@ -770,6 +770,7 @@ class LLMGoodEnough:
         4) Compute one-sided MWU p-value for Random–Human > Human–Human
         """
 
+        # Preallocate results array
         results = np.empty((iterations, 2), dtype=float)
 
         # ---- ensure df_items is usable and consistent ----
@@ -798,6 +799,7 @@ class LLMGoodEnough:
         ss = np.random.SeedSequence(self.seed)
         child_seeds = ss.spawn(iterations)
 
+        # Monte Carlo loop
         for i, child_ss in enumerate(child_seeds):
             rng_i = np.random.default_rng(child_ss)
 
