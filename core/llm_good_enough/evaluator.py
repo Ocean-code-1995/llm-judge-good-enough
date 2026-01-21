@@ -1185,8 +1185,6 @@ class LLMGoodEnough:
         if save_path:
             fig.savefig(save_path, dpi=300, bbox_inches="tight")
 
-        plt.show()
-
 
 
     def count_pvalue_samples(
@@ -1700,7 +1698,7 @@ class LLMGoodEnough:
 
             # --- 5) Convergence check (split-half acceptance rate) ---
             n_decisions = len(decisions)
-            if iteration_count >= min_iterations and n_decisions % check_interval == 0:
+            if n_decisions >= min_iterations and n_decisions % check_interval == 0:
                 decisions_arr = np.asarray(decisions, dtype=float)
                 half = len(decisions_arr) // 2
 
