@@ -144,6 +144,14 @@ Decision rule:
 
 To calibrate expectations, a **random judge** is simulated by assigning scores uniformly across the rating range. This baseline provides a clear “not good enough” contrast.
 
+### Statistical scope and assumptions
+
+The pairwise-difference approach produces **multiple disagreement values per item** (e.g., 3 human raters yield 3 Human–Human pairs and 3 LLM–Human pairs from a single item). These within-item values are not independent, which violates the Mann–Whitney U test’s independence assumption. In practice this can make individual p-values slightly anti-conservative (too small), making rejection marginally too easy.
+
+Additionally, the two distributions compared by MWU can differ in size. With *n* human raters per item, the Human–Human distribution contains up to C(*n*, 2) values per item while the LLM–Human distribution contains up to *n*. For *n* = 3 these are equal; for *n* = 5 the ratio is 2 : 1. The MWU test handles unequal sizes natively, but the differing dependency structures are worth noting.
+
+These are inherent properties of the pairwise-difference paradigm, not artifacts of this implementation. The framework addresses them by design: conclusions are never drawn from a single p-value. Instead, the Monte Carlo robustness analysis, stability analyses, and seed sensitivity checks evaluate **patterns across many tests** — relative positioning in the random-judge cloud, acceptance-rate trends, and cross-seed consistency — where the dependency affects all comparisons equally and therefore does not distort the relative conclusions.
+
 ## API reference
 
 The `LLMGoodEnough` class provides the following public methods:
@@ -179,7 +187,6 @@ The `LLMGoodEnough` class provides the following public methods:
 
 | Method | Description |
 |--------|-------------|
-| `reseed(new_seed)` | Reseed the random number generators for reproducibility or variation. |
 | `init_random_judge(min_score, max_score)` | Initialize the random baseline judge column. |
 
 ## Benchmarks and reproducibility
