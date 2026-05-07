@@ -263,6 +263,8 @@ For each run, compute the Δ mean disagreement for the **random judge** relative
 
 $\Delta = \mathbb{E}\!\left[\,|R - H|\,\right] - \mathbb{E}\!\left[\,|H_i - H_j|\,\right]$
 
+where *R* is the random judge’s score for a given item, *H* ranges over all available human scores for that item (the expectation is taken over all item–human pairs), and *H_i*, *H_j* are scores from two distinct human raters on the same item.
+
 The implementation uses a split-half diagnostic (first half vs second half) via KDE to check Monte Carlo stability.  
 
 **Interpretation:**  
@@ -308,7 +310,9 @@ Ideally, the LLM clusters near the top (non-significant, human-like) while the r
 
 ### 4. Human Stability Analysis (random baseline)
 
-Before evaluating an LLM judge, it’s critical to verify that the human annotations form a **usable baseline**. This analysis is a **power / sanity check** using a random judge: *“With increasing sample size, can we reliably reject a clearly bad (random) judge?”*
+Before evaluating an LLM judge, it’s critical to verify that the human annotations form a **usable baseline**. The core question is: *do the human raters share enough consistent signal that a clearly bad judge can be distinguished from a human-like one?*
+
+This analysis answers that by comparing **human–human disagreements** against **random-judge–human disagreements** at increasing sample sizes. If the random judge’s disagreements with humans are significantly greater than inter-human disagreements (one-sided MWU test), the humans must be sharing a consistent signal that random guessing doesn’t have. At small sample sizes the test may lack power to detect this difference, but as samples grow, reliable rejection of the random judge confirms the human baseline is usable. A downward trend in acceptance rate is the key signal: *“with enough data, random is clearly distinguishable from human.”*
 
 <p align="center">
   <a href="diagrams/svg/human_stability_analysis.svg">
@@ -395,7 +399,11 @@ It checks whether the **random judge** tends to disagree with humans **more** th
 
 This section corresponds to `plot_llm_stability_analysis(llm_col)`.
 
-**Goal:** determine whether the *LLM “good enough” decision* is stable as sample size increases (and quantify practical deviation via effect size).
+Once the human baseline is confirmed usable (Section 4), the next question is: *is the LLM’s “good enough” verdict stable, or does it only pass because small samples lack the power to detect a difference?*
+
+This analysis answers that by repeatedly bootstrap-sampling at increasing sample sizes and, for each sample, comparing **LLM–human disagreements** against **human–human disagreements** via the same one-sided MWU test. If the LLM is genuinely human-like, it should keep passing the test even as sample size grows and the test gains power. If it only passed at small sample sizes, acceptance will drop as more data reveals the gap — the earlier acceptance was a false sense of security from low statistical power, not real human-likeness.
+
+A second panel tracks the **practical effect size** (Δ mean disagreement) alongside the acceptance rate, separating statistical significance from practical magnitude.
 
 **Outputs (two-panel figure):**
 - **Panel A — Acceptance rate vs sample %**: how often the LLM is “accepted” (p > 0.05) across bootstrap iterations at each sample size.
