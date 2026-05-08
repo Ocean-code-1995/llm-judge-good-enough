@@ -1,14 +1,14 @@
 %%{init: {'flowchart': {'nodeSpacing': 12, 'rankSpacing': 22}, 'themeVariables': {'fontSize': '12px', 'fontFamily': 'arial, sans-serif'}}}%%
 flowchart TD
-    INPUT["Input<br/>≥ 2 human ratings per item · LLM scores on shared scale"]
+    INPUT["Input<br/>≥ 2 human ratings per item, LLM scores on shared scale"]
 
     INPUT --> MC
 
     subgraph PHASE1 ["Phase 1 · Baseline Check"]
         direction TB
-        MC["Monte Carlo Robustness<br/>Random judge vs humans · all data"]
+        MC["Monte Carlo Robustness<br/>Random judge vs humans, all data"]
         MC --> MCOK{{"Random judge<br/>clearly rejected?"}}
-        MCOK -->|"No"| STAB1["Stability Analysis<br/>Random judge vs humans<br/>5% → ~1000% · estimate data for ~80% power"]
+        MCOK -->|"No"| STAB1["Stability Analysis<br/>Random judge vs humans<br/>5% → ~1000%, estimate data for ~80% power"]
         STAB1 --> MOREDATA["Collect more data"]
         MOREDATA --> LIMIT{{"No separation after<br/>N attempts?"}}
         LIMIT -->|"No"| MC
@@ -19,22 +19,22 @@ flowchart TD
 
     subgraph PHASE2 ["Phase 2 · LLM Evaluation"]
         direction TB
-        COMP["Compute distributions<br/>Human–Human: |Hᵢ − Hⱼ| · LLM–Human: |LLM − Hᵢ|"]
-        MWU["Mann–Whitney U · one-sided<br/>H₀: mean|LLM−H| ≤ mean|Hᵢ−Hⱼ|"]
+        COMP["Compute distributions<br/>Human–Human: |Hᵢ − Hⱼ|<br/>LLM–Human: |LLM − Hᵢ|"]
+        MWU["Mann–Whitney U (one-sided)<br/>H₀: mean|LLM−H| ≤ mean|Hᵢ−Hⱼ|"]
         COMP --> MWU
         MWU --> PVAL{{"p ≥ 0.05?"}}
         PVAL -->|"No"| NOTGE["NOT Good Enough<br/>Significant divergence"]
-        PVAL -->|"Yes"| DELTA{{"Δ = mean|LLM−H| − mean|Hᵢ−Hⱼ|<br/>≈ 0?"}}
-        DELTA -->|"Yes"| GOOD1["Good Enough<br/>Small Δ · non-significant"]
-        DELTA -->|"No"| STAB2["Stability Analysis · LLM vs humans · 5% → ~1000%<br/>Target: ≥80% acceptance (not worse)<br/>or ≤20% acceptance (worse)"]
+        PVAL -->|"Yes"| DELTA{{"Δ = mean|LLM−H| − mean|Hᵢ−Hⱼ| ≈ 0?"}}
+        DELTA -->|"Yes"| GOOD1["Good Enough<br/>Small Δ, non-significant"]
+        DELTA -->|"No"| STAB2["Stability Analysis: LLM vs humans<br/>5% → ~1000%, target: ≥80% acceptance (not worse)<br/>or ≤20% acceptance (worse)"]
         STAB2 --> STABLE{{"At 100% data:<br/>≥80% or ≤20%<br/>acceptance?"}}
     end
 
     NOTGE --> FIX["Improve prompt or model"]
     FIX -.->|"iterate"| PHASE2
 
-    STABLE -->|"≥ 80%"| GOOD2["Good Enough · Robust"]
-    STABLE -->|"≤ 20%"| NOTGE2["NOT Good Enough · Robust"]
+    STABLE -->|"≥ 80%"| GOOD2["Good Enough, Robust"]
+    STABLE -->|"≤ 20%"| NOTGE2["NOT Good Enough, Robust"]
     STABLE -->|"In between"| MORE2["Collect more data"]
     MORE2 -.->|"iterate"| INPUT
 
