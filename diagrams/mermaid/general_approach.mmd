@@ -1,24 +1,58 @@
+%%{init: {'flowchart': {'nodeSpacing': 12, 'rankSpacing': 22}, 'themeVariables': {'fontSize': '12px', 'fontFamily': 'arial, sans-serif'}}}%%
 flowchart TD
-    A["Input Data:<br/>Human scores (>= 2 per item) & LLM scores"] --> B["Step 1:<br/>Compute Human-Human disagreements<br/>All pairwise abs(h_i - h_j) per item"]
-    A --> C["Step 2:<br/>Compute LLM-Human disagreements<br/>All abs(h_i - llm) per item"]
-    A --> D["Step 3:<br/>Establish Random Baseline<br/>Uniform random scores (min..max)"]
+    INPUT["Input<br/>≥ 2 human ratings per item · LLM scores on shared scale"]
 
-    B --> E["Distribution of<br/>Human-Human disagreements"]
-    C --> F["Distribution of<br/>LLM-Human disagreements"]
-    D --> G["Distribution of<br/>Random-Human disagreements"]
+    INPUT --> MC
 
-    E --> H1["Step 4:<br/>Statistical test (MWU, one-sided)<br/>Compare LLM-Human vs Human-Human<br/>H1: LLM-Human > Human-Human"]
-    F --> H1
+    subgraph PHASE1 ["Phase 1 · Baseline Check"]
+        direction TB
+        MC["Monte Carlo Robustness<br/>Random judge vs humans · all data"]
+        MC --> MCOK{{"Random judge<br/>clearly rejected?"}}
+        MCOK -->|"No"| STAB1["Stability Analysis<br/>Random judge vs humans<br/>5% → ~1000% · estimate data for ~80% power"]
+        STAB1 --> MOREDATA["Collect more data"]
+        MOREDATA --> LIMIT{{"No separation after<br/>N attempts?"}}
+        LIMIT -->|"No"| MC
+    end
 
-    H1 --> I{"LLM p-value >= 0.05?"}
-    I -->|"Yes"| J["LLM is 'Good Enough'<br/>No evidence it diverges<br/>more than humans do"]
-    I -->|"No"| K["LLM is NOT 'Good Enough'<br/>Diverges more than humans<br/>(statistically significant)"]
+    LIMIT -->|"Yes"| ERR["Annotation process likely erroneous"]
+    MCOK -->|"Yes"| PHASE2
 
-    %% Optional sanity check: random judge should be rejected with enough data
-    E --> H2["Sanity check (optional):<br/>MWU test Random-Human vs Human-Human<br/>Expect p < 0.05 with enough data"]
-    G --> H2
+    subgraph PHASE2 ["Phase 2 · LLM Evaluation"]
+        direction TB
+        COMP["Compute distributions<br/>Human–Human: |Hᵢ − Hⱼ| · LLM–Human: |LLM − Hᵢ|"]
+        MWU["Mann–Whitney U · one-sided<br/>H₀: mean|LLM−H| ≤ mean|Hᵢ−Hⱼ|"]
+        COMP --> MWU
+        MWU --> PVAL{{"p ≥ 0.05?"}}
+        PVAL -->|"No"| NOTGE["NOT Good Enough<br/>Significant divergence"]
+        PVAL -->|"Yes"| DELTA{{"Δ = mean|LLM−H| − mean|Hᵢ−Hⱼ|<br/>≈ 0?"}}
+        DELTA -->|"Yes"| GOOD1["Good Enough<br/>Small Δ · non-significant"]
+        DELTA -->|"No"| STAB2["Stability Analysis · LLM vs humans · 5% → ~1000%<br/>Target: ≥80% acceptance (not worse)<br/>or ≤20% acceptance (worse)"]
+        STAB2 --> STABLE{{"At 100% data:<br/>≥80% or ≤20%<br/>acceptance?"}}
+    end
 
-    style J fill:#90EE90
-    style K fill:#FFB6C1
-    style H1 fill:#87CEEB
-    style H2 fill:#FFE4B5
+    NOTGE --> FIX["Improve prompt or model"]
+    FIX -.->|"iterate"| PHASE2
+
+    STABLE -->|"≥ 80%"| GOOD2["Good Enough · Robust"]
+    STABLE -->|"≤ 20%"| NOTGE2["NOT Good Enough · Robust"]
+    STABLE -->|"In between"| MORE2["Collect more data"]
+    MORE2 -.->|"iterate"| INPUT
+
+    style INPUT   fill:#E8EAF6,stroke:#3F51B5,color:#000
+    style GOOD1   fill:#C8E6C9,stroke:#388E3C,color:#000
+    style GOOD2   fill:#C8E6C9,stroke:#388E3C,color:#000
+    style NOTGE   fill:#FFCDD2,stroke:#D32F2F,color:#000
+    style NOTGE2  fill:#FFCDD2,stroke:#D32F2F,color:#000
+    style ERR     fill:#FFCDD2,stroke:#D32F2F,color:#000
+    style MOREDATA fill:#FFF9C4,stroke:#F9A825,color:#000
+    style MORE2   fill:#FFF9C4,stroke:#F9A825,color:#000
+    style FIX     fill:#FFE0B2,stroke:#EF6C00,color:#000
+
+    style PHASE1  fill:#F3E5F5,stroke:#7B1FA2,color:#000
+    style PHASE2  fill:#E3F2FD,stroke:#1565C0,color:#000
+
+    style MCOK    fill:#CE93D8,stroke:#7B1FA2,color:#000
+    style LIMIT   fill:#CE93D8,stroke:#7B1FA2,color:#000
+    style PVAL    fill:#90CAF9,stroke:#1565C0,color:#000
+    style DELTA   fill:#90CAF9,stroke:#1565C0,color:#000
+    style STABLE  fill:#90CAF9,stroke:#1565C0,color:#000
