@@ -106,7 +106,6 @@ The goal is to test whether a language model's judgments align with human-level 
   <img src="diagrams/svg/workflow_diagram_v4.2.svg" width="100%" alt="General Approach" />
 </p>
 
-The current workflow diagram source is maintained in `diagrams/graffle/`, with exports in `diagrams/svg/` and `diagrams/pdf/`. Previous general-approach sources and exports are archived in `diagrams/legacy/general_approach/`.
 
 ### Why disagreement-based evaluation?
 
