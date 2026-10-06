@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/render_mermaid_svg.sh
-#   ./scripts/render_mermaid_svg.sh -i diagrams/mermaid/general_approach.mmd -o diagrams/svg/general_approach.svg
+#   ./scripts/render_mermaid_svg.sh -i diagrams/mermaid/human_stability_analysis.mmd -o diagrams/svg/human_stability_analysis.svg
 #
 # Requirements (either one):
 #   - Preferred: `mmdc` from @mermaid-js/mermaid-cli (npm install -g @mermaid-js/mermaid-cli)
@@ -14,8 +14,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-IN="${REPO_ROOT}/diagrams/mermaid/general_approach.mmd"
-OUT="${REPO_ROOT}/diagrams/svg/general_approach.svg"
+IN="${REPO_ROOT}/diagrams/mermaid/human_stability_analysis.mmd"
+OUT="${REPO_ROOT}/diagrams/svg/human_stability_analysis.svg"
 BACKGROUND="transparent"
 
 usage() {
@@ -32,7 +32,7 @@ Defaults:
 
 Examples:
   $(basename "$0")
-  $(basename "$0") -i diagrams/mermaid/general_approach.mmd -o diagrams/svg/general_approach.svg
+  $(basename "$0") -i diagrams/mermaid/human_stability_analysis.mmd -o diagrams/svg/human_stability_analysis.svg
 EOF
 }
 

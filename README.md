@@ -103,8 +103,10 @@ Missing values are allowed, but rows with fewer than 2 non-missing human ratings
 The goal is to test whether a language model's judgments align with human-level variability — i.e., whether it behaves like *another human judge* rather than a random or systematically biased rater.
 
 <p align="center">
-  <img src="diagrams/svg/general_approach.svg" width="650" alt="General Approach" />
+  <img src="diagrams/svg/workflow_diagram_v4.2.svg" width="100%" alt="General Approach" />
 </p>
+
+The current workflow diagram source is maintained in `diagrams/graffle/`, with exports in `diagrams/svg/` and `diagrams/pdf/`. Previous general-approach sources and exports are archived in `diagrams/legacy/general_approach/`.
 
 ### Why disagreement-based evaluation?
 
@@ -473,7 +475,7 @@ LLM-AS-A-JUDGE-GOOD-ENOUGH
 │       └── example.ipynb
 │
 ├── benchmarks/                    # Datasets + analysis notebooks
-├── diagrams/                      # Methodology diagrams (mermaid/, svg/)
+├── diagrams/                      # Methodology diagrams (graffle/, mermaid/, svg/, pdf/, legacy/)
 ├── docs/                          # Extended documentation
 └── scripts/                       # Utilities (GIF generation, diagram rendering)
 ```
