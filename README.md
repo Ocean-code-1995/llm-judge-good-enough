@@ -1,8 +1,8 @@
 # When is an LLM-as-a-judge good enough?
 
 <p align="left">
-  <a href="xxxxxxxx.xx">
-    <img src="https://img.shields.io/badge/Paper-Coming%20Soon-555555" alt="Paper (coming soon)" />
+  <a href="https://journals.sagepub.com/doi/10.1177/30504554261495282">
+    <img src="https://img.shields.io/badge/Paper-Published-2EA44F" alt="Paper (published)" />
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-2EA44F" alt="MIT License" />
@@ -27,7 +27,7 @@
 
 Generative AI models can automate evaluation tasks (e.g., judging the quality of model outputs), but only if their judgments are trustworthy. This repository studies **when an LLM-as-a-judge is “good enough”** by comparing how much it disagrees with humans against how much humans disagree with each other (“diversity of opinion”). If the LLM’s deviations are within typical inter-human variability (under a statistical decision rule), the LLM can be treated as *another reasonable judge* for that task.
 
-> Paper: `xxxxxxxx.xx` (placeholder)
+> Paper: [When is an LLM-as-a-judge good enough?](https://journals.sagepub.com/doi/10.1177/30504554261495282)
 
 ## Table of Contents
 
