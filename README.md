@@ -31,7 +31,7 @@ Generative AI models can automate evaluation tasks (e.g., judging the quality of
 
 ## Authors
 
-For questions about the paper or this repository, contact the authors on LinkedIn:
+Feel free to contact the authors on LinkedIn with questions about the paper or this repository:
 
 - **Tim Breitenbach** — [LinkedIn](https://www.linkedin.com/in/tim-breitenbach-96501118a/)
 - **Sebastian Wefers** — [LinkedIn](https://www.linkedin.com/in/sebastian-wefers-24484320a/)
