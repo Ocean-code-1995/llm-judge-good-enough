@@ -29,6 +29,13 @@ Generative AI models can automate evaluation tasks (e.g., judging the quality of
 
 > Paper: [When is an LLM-as-a-judge good enough?](https://journals.sagepub.com/doi/10.1177/30504554261495282)
 
+## Authors
+
+For questions about the paper or this repository, contact the authors on LinkedIn:
+
+- **Tim Breitenbach** — [LinkedIn](https://www.linkedin.com/in/tim-breitenbach-96501118a/)
+- **Sebastian Wefers** — [LinkedIn](https://www.linkedin.com/in/sebastian-wefers-24484320a/)
+
 ## Table of Contents
 
 - [Quickstart](#quickstart)
